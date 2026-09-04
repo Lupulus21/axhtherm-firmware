@@ -7,6 +7,17 @@ caldo/freddo e densimetro propri.
 Pilota **attuatori di potenza** — compressore frigorifero e cavo/tappetino riscaldante — su
 cotte che durano settimane o mesi.
 
+### ⬇️ Scarica il firmware già compilato
+
+I file `.bin` **non sono fra le cartelle qui sopra**: qui c'è il codice sorgente. I binari
+pronti stanno nelle **[Releases](https://github.com/Lupulus21/axhtherm-firmware/releases)**.
+
+- **[axhtherm-3.0.0-1camera.bin](https://github.com/Lupulus21/axhtherm-firmware/releases/download/v3.0.0/axhtherm-3.0.0-1camera.bin)** — una camera, **prendi questo se non sei sicuro**
+- [axhtherm-3.0.0-2camere.bin](https://github.com/Lupulus21/axhtherm-firmware/releases/download/v3.0.0/axhtherm-3.0.0-2camere.bin) — due camere (richiede hardware aggiuntivo)
+- [SHA256SUMS](https://github.com/Lupulus21/axhtherm-firmware/releases/download/v3.0.0/SHA256SUMS) — per verificare il download
+
+**Prima di flasharlo leggi l'avvertenza qui sotto**: il pinout è compilato nel binario.
+
 ---
 
 ## ⚠️ Leggi questo prima di flashare
