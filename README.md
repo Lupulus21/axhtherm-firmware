@@ -66,15 +66,58 @@ del proprio impianto elettrico e delle proprie fermentazioni.
 | Failsafe hardware | Timer1 in ISR: se il loop si blocca oltre 60 s, i relè su GPIO diretti vengono spenti |
 | Sfasamento fra camere | Compressori sfasati di 30 s, finestre PID sfasate: niente spunti di corrente simultanei |
 
-## Compilare
+## Scaricare il firmware
 
-Serve [PlatformIO](https://platformio.org/).
+Due strade, a seconda di cosa ti serve. **In questa pagina non troverai un file `.bin`**: qui
+c'è il codice sorgente, i binari stanno nelle Release.
+
+### A — voglio solo installarlo
+
+Vai in **[Releases](https://github.com/Lupulus21/axhtherm-firmware/releases)** e scarica il file
+che ti serve. Non serve git, non serve compilare, non serve scaricare le cartelle.
+
+| File | Per |
+|---|---|
+| `axhtherm-3.0.0-1camera.bin` | Una camera — **prendi questo se non sei sicuro** |
+| `axhtherm-3.0.0-2camere.bin` | Due camere: richiede MCP23008, una DS18B20 in più, breakout per P1 |
+
+Controlla che il file sia arrivato integro:
 
 ```bash
+shasum -a 256 -c SHA256SUMS      # macOS/Linux
+certutil -hashfile axhtherm-3.0.0-1camera.bin SHA256   # Windows
+```
+
+Poi si installa da USB con [esptool](https://github.com/espressif/esptool):
+
+```bash
+esptool.py --port /dev/cu.usbserial-XXXX write_flash 0x0 axhtherm-3.0.0-1camera.bin
+```
+
+Se hai già una versione precedente sul dispositivo, è più comodo l'**OTA** dall'interfaccia web
+(Sistema → Aggiornamento firmware): niente cavo, e la configurazione resta.
+
+### B — voglio leggerlo, modificarlo o compilarlo da me
+
+Serve [PlatformIO](https://platformio.org/) (si installa anche come estensione di VS Code).
+
+```bash
+git clone https://github.com/Lupulus21/axhtherm-firmware.git
+cd axhtherm-firmware
+
 pio run -e d1_mini        # una camera
 pio run -e d1_mini_2ch    # due camere
-pio test -e native        # 85 test sul motore di controllo, su host
+pio test -e native        # 85 test sul motore di controllo, eseguiti sul PC
 ```
+
+PlatformIO scarica da sé toolchain e librerie: la prima compilazione richiede qualche minuto,
+le successive una ventina di secondi. **Il binario esce in
+`.pio/build/<environment>/firmware.bin`** — quella cartella non è nel repository perché è
+generata, e cambia a ogni compilazione.
+
+> **La compilazione è riproducibile.** Il `.bin` che ottieni clonando e compilando è
+> **byte-identico** a quello allegato alla release (verificato: stesso SHA256). Non devi
+> fidarti del binario che ti passano: puoi rigenerarlo dal sorgente e confrontarlo.
 
 Il numero di camere è un **flag di compilazione** (`AX_N_CHAMBERS`): dimensiona array statici,
 e renderlo dinamico significherebbe allocare su uno heap già sottile (~14 KB liberi).
