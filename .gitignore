@@ -1,0 +1,15 @@
+# Artefatti di build PlatformIO (rigenerabili: pio run -e d1_mini)
+.pio/
+
+# Backup del dispositivo: contengono configurazione reale, SSID, topologia di rete
+# e lo storico delle fermentazioni. NON vanno versionati in un repository pubblico.
+backups/
+
+# Schede di configurazione personali (token, credenziali)
+docs/ISPINDEL_PARAMETRI.md
+
+# macOS
+.DS_Store
+
+# Binari per le release (allegati, non versionati)
+dist/

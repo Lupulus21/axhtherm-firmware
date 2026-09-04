@@ -1,0 +1,2406 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="AxHTherm">
+<meta name="theme-color" content="#14110c">
+<link rel="apple-touch-icon" href="/icon.png">
+<link rel="icon" type="image/png" href="/icon.png">
+<link rel="apple-touch-startup-image" media="(device-width:375px) and (device-height:667px) and (-webkit-device-pixel-ratio:2) and (orientation:portrait)" href="/splash_750x1334.png">
+<link rel="apple-touch-startup-image" media="(device-width:414px) and (device-height:896px) and (-webkit-device-pixel-ratio:2) and (orientation:portrait)" href="/splash_828x1792.png">
+<link rel="apple-touch-startup-image" media="(device-width:375px) and (device-height:812px) and (-webkit-device-pixel-ratio:3) and (orientation:portrait)" href="/splash_1125x2436.png">
+<link rel="apple-touch-startup-image" media="(device-width:390px) and (device-height:844px) and (-webkit-device-pixel-ratio:3) and (orientation:portrait)" href="/splash_1170x2532.png">
+<link rel="apple-touch-startup-image" media="(device-width:393px) and (device-height:852px) and (-webkit-device-pixel-ratio:3) and (orientation:portrait)" href="/splash_1179x2556.png">
+<link rel="apple-touch-startup-image" media="(device-width:402px) and (device-height:874px) and (-webkit-device-pixel-ratio:3) and (orientation:portrait)" href="/splash_1206x2622.png">
+<link rel="apple-touch-startup-image" media="(device-width:414px) and (device-height:896px) and (-webkit-device-pixel-ratio:3) and (orientation:portrait)" href="/splash_1242x2688.png">
+<link rel="apple-touch-startup-image" media="(device-width:428px) and (device-height:926px) and (-webkit-device-pixel-ratio:3) and (orientation:portrait)" href="/splash_1284x2778.png">
+<link rel="apple-touch-startup-image" media="(device-width:430px) and (device-height:932px) and (-webkit-device-pixel-ratio:3) and (orientation:portrait)" href="/splash_1290x2796.png">
+<link rel="apple-touch-startup-image" media="(device-width:440px) and (device-height:956px) and (-webkit-device-pixel-ratio:3) and (orientation:portrait)" href="/splash_1320x2868.png">
+<title>AxHTherm</title>
+<style>
+/* Cantina Ambra — tema scuro homebrew (dark-committed). Un solo accento ambra,
+   colori-sonda coerenti (blu/arancio/verde/viola) tra tile, legenda e grafico. */
+:root{color-scheme:dark;
+ --bg:#14110c;--surface:#1e1a12;--surface2:#29231a;
+ --ink:#f6f0e4;--ink2:#bcb09a;--muted:#948a72;
+ --grid:#372f20;--axis:#5c5140;--border:#322a1e;
+ --s1:#46a6e6;--s2:#ec7f3c;--s3:#3fb47f;--s7:#a78bf0;--serious:#ef6a3c;
+ --good:#37b26b;--warn:#e8b23a;--crit:#f5695c;
+ --accent:#ec9a3a;--accent-ink:#17110a;--heat:#ef6a3c;--cool:#46a6e6;
+ --field-bd:#8a7c60}
+*{box-sizing:border-box}
+html{overflow-x:clip}
+body{margin:0;background:var(--bg);color:var(--ink);overflow-x:clip;
+ font:15px/1.45 -apple-system,system-ui,"Segoe UI",sans-serif}
+.chsel{display:flex;gap:4px;background:var(--bg);border:1px solid var(--border);border-radius:999px;padding:3px}
+.chsel button{border:0;background:transparent;color:var(--muted);font:inherit;font-size:13px;font-weight:600;padding:4px 12px;border-radius:999px;cursor:pointer;white-space:nowrap;max-width:11ch;overflow:hidden;text-overflow:ellipsis}
+.chsel button.on{background:var(--surface);color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,.35)}
+header{display:flex;align-items:center;gap:12px;
+ padding:calc(10px + env(safe-area-inset-top)) 16px 10px;background:var(--surface);
+ background-image:repeating-linear-gradient(96deg,#1e1a12,#1e1a12 7px,#211c13 7px,#211c13 14px);
+ border-bottom:1px solid var(--border);position:sticky;top:0;z-index:15}
+header h1{font-family:Georgia,"Times New Roman",serif;color:var(--accent);
+ font-size:19px;margin:0;letter-spacing:.01em}
+header .ver{color:var(--muted);font-size:12px}
+nav{display:flex;gap:2px;margin-left:auto}
+nav button{display:flex;flex-direction:column;align-items:center;gap:3px;border:0;background:none;
+ color:var(--muted);padding:8px 12px;border-radius:10px;cursor:pointer;
+ font-size:11px;text-transform:uppercase;letter-spacing:.04em}
+nav button svg{width:20px;height:20px}
+nav button.on{background:var(--accent);color:var(--accent-ink)}
+main{max-width:960px;margin:0 auto;padding:12px}
+section.tab{display:none}section.tab.on{display:block}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(104px,1fr));gap:12px;margin-bottom:12px}
+#tab-dash .cards{grid-template-columns:repeat(3,minmax(0,1fr))}
+#runcard{margin:6px 0 10px}
+#runcard .rc{background:var(--surface);border:1px solid var(--border);border-radius:12px;
+ padding:10px 12px}
+#runcard .now{font-size:15px;margin-bottom:2px}
+#runcard .next{margin-top:6px}
+#runcard .bar{position:relative;height:8px;border-radius:4px;background:var(--border);
+ margin:8px 0 4px;overflow:hidden}
+#runcard .bar i{position:absolute;inset:0 auto 0 0;background:var(--accent);border-radius:4px}
+#runcard .bar u{position:absolute;top:-2px;bottom:-2px;width:2px;background:var(--ink);
+ opacity:.55}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:12px 14px;min-width:0}
+.tile .v{white-space:nowrap}
+.tile .sub{line-height:1.3}
+.card .k{color:var(--ink2);font-size:12px}
+.card .v{font-size:22px;font-weight:650;margin-top:2px;font-variant-numeric:tabular-nums}
+.card .v small{font-size:13px;color:var(--muted);font-weight:400}
+.card .sub{color:var(--muted);font-size:12px;margin-top:2px}
+.probe{display:inline-block;width:9px;height:9px;border-radius:999px;vertical-align:middle;margin-right:6px}
+.probe-mosto{background:var(--s1)}.probe-camera{background:var(--s2)}
+.probe-amb{background:var(--s3)}.probe-grav{background:var(--s7)}
+.hero{position:relative;overflow:hidden;border-radius:20px;padding:20px 20px 18px;margin-bottom:12px}
+.hero::before{content:"";position:absolute;left:0;right:0;top:0;height:3px;
+ background:linear-gradient(90deg,var(--heat),var(--accent))}
+.hero[data-state=cool]::before{background:linear-gradient(90deg,var(--cool),#7fc4f0)}
+.hero[data-state=heat]::before{background:linear-gradient(90deg,var(--heat),var(--accent))}
+.herotop{display:flex;align-items:center;gap:6px;margin-bottom:2px}
+.herotop .k{font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+.herotop .badge{margin-left:auto}
+.heronum{font-size:clamp(54px,16vw,68px);font-weight:700;line-height:1.05;
+ color:var(--ink);font-variant-numeric:tabular-nums}
+.heronum small{font-size:22px;color:var(--ink2);font-weight:400}
+.setchip{display:inline-block;margin-top:10px;background:var(--surface2);color:var(--accent);
+ border-radius:999px;padding:4px 12px;font-size:14px;font-variant-numeric:tabular-nums}
+.outrow{display:flex;align-items:center;gap:10px;margin-top:12px;flex-wrap:wrap}
+.outpill{background:var(--surface2);color:var(--ink);border-radius:999px;padding:4px 10px;
+ font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.04em}
+.outrow .sub{margin:0;color:var(--muted);font-size:12px}
+.alert{display:flex;gap:8px;align-items:center;border-radius:14px;padding:10px 12px;margin:8px 0;
+ font-size:14px;color:var(--ink);border:1px solid var(--border);border-left:3px solid var(--muted)}
+.alert.warn{background:color-mix(in srgb,var(--warn) 14%,var(--surface));border-left-color:var(--warn)}
+.alert.crit{background:color-mix(in srgb,var(--crit) 14%,var(--surface));border-left-color:var(--crit)}
+.panel{background:var(--surface);border:1px solid var(--border);border-radius:16px;
+ padding:16px;margin-top:12px}
+.panel h2{font-size:15px;margin:0 0 10px;font-weight:600}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:8px 0}
+button.b{background:var(--accent);color:var(--accent-ink);border:0;border-radius:12px;
+ padding:11px 16px;font-size:15px;font-weight:600;min-height:44px;cursor:pointer}
+button.b:active{transform:scale(.97)}
+button.b.sec{background:none;color:var(--accent);border:1px solid var(--accent)}
+button.b.danger{background:#b23a30;color:#fff}
+table.tbl{width:100%;border-collapse:collapse;margin:8px 0;font-size:13px}
+table.tbl th,table.tbl td{padding:4px 6px;text-align:left;border-bottom:1px solid var(--border)}
+table.tbl th:last-child{text-align:right}
+table.tbl th{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+table.tbl td:last-child{text-align:right}
+table.tbl .b{padding:2px 8px;font-size:12px}
+button.b:disabled{opacity:.4;cursor:default}
+input:not([type=checkbox]):not([type=radio]),select{background:var(--surface2);color:var(--ink);
+ border:1px solid var(--field-bd);border-radius:12px;padding:10px 12px;font-size:15px;max-width:100%}
+input:focus,select:focus{outline:2px solid color-mix(in srgb,var(--accent) 30%,transparent);
+ border-color:var(--accent)}
+input[type=checkbox],input[type=radio]{accent-color:var(--accent)}
+input[type=number]{width:90px}
+label.f{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--ink2)}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--ink2);margin:6px 0}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:middle}
+.chartwrap{position:relative}
+canvas{width:100%;height:260px;display:block;touch-action:pan-y}
+#gchart{height:110px}
+.tip{position:absolute;pointer-events:none;background:var(--surface);border:1px solid var(--border);
+ border-radius:10px;padding:6px 9px;font-size:12px;display:none;box-shadow:0 4px 14px rgba(0,0,0,.4);
+ white-space:nowrap;z-index:4}
+.range button{border:1px solid var(--axis);background:none;color:var(--ink2);border-radius:8px;
+ padding:5px 10px;font-size:12px;cursor:pointer;min-height:32px}
+.range button.on{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+details.manual{margin:8px 0}
+details.manual>summary{cursor:pointer;color:var(--ink2);font-size:14px;padding:6px 0;list-style:none}
+details.manual>summary::-webkit-details-marker{display:none}
+details.manual>summary::before{content:"\25B8  ";color:var(--muted)}
+details.manual[open]>summary::before{content:"\25BE  "}
+details.manual .manualbody{background:var(--surface2);border-radius:12px;padding:12px;margin-top:6px}
+table{border-collapse:collapse;width:100%;font-size:13px}
+td,th{padding:6px 8px;border-bottom:1px solid var(--border);text-align:left}
+.step{background:var(--surface2);border:1px solid var(--border);border-radius:14px;padding:12px;
+ margin:8px 0;display:flex;flex-wrap:wrap;gap:10px;align-items:end}
+.badge{font-size:11px;border-radius:8px;padding:3px 9px;font-weight:700}
+.badge.off{color:var(--crit);background:color-mix(in srgb,var(--crit) 15%,var(--surface));
+ border:1px solid color-mix(in srgb,var(--crit) 40%,transparent)}
+.badge.off::before{content:"\25CB "}
+.badge.on{color:var(--good);background:color-mix(in srgb,var(--good) 15%,var(--surface));
+ border:1px solid color-mix(in srgb,var(--good) 40%,transparent)}
+.badge.on::before{content:"\25CF "}
+.mono{font-variant-numeric:tabular-nums}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px}
+hr{border:0;border-top:1px solid var(--border);margin:12px 0}
+.muted{color:var(--muted);font-size:12px}
+#snack{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:var(--ink);
+ color:var(--bg);padding:10px 16px;border-radius:12px;font-size:14px;display:none;z-index:99;
+ max-width:90%;box-shadow:0 6px 20px rgba(0,0,0,.5)}
+/* Phone: la barra di navigazione scende sotto il pollice (bottom tab bar) */
+@media (max-width:720px){
+ nav{position:fixed;left:0;right:0;bottom:0;margin:0;z-index:20;
+  background:color-mix(in srgb,var(--surface) 92%,transparent);
+  backdrop-filter:blur(18px) saturate(1.3);-webkit-backdrop-filter:blur(18px) saturate(1.3);
+  border-top:1px solid var(--border);padding-bottom:env(safe-area-inset-bottom)}
+ nav button{flex:1;min-width:0;min-height:52px;border-radius:0;
+  padding:8px 3px;font-size:10px;letter-spacing:.01em;gap:2px;
+  white-space:nowrap;overflow:hidden}
+ nav button svg{width:22px;height:22px}
+ nav button.on{background:none;color:var(--accent)}
+ main{padding-bottom:calc(66px + env(safe-area-inset-bottom))}
+ #snack{bottom:calc(72px + env(safe-area-inset-bottom))}
+}
+</style>
+</head>
+<body>
+<header>
+ <h1>AxHTherm</h1><span class="ver" id="fw"></span>
+ <!-- Selettore di camera: reso visibile solo se il dispositivo ne gestisce piu' di una.
+      Sta nell'intestazione perche' governa dashboard, andamento e profilo insieme. -->
+ <div class="chsel" id="chsel" hidden></div>
+ <nav>
+  <button data-tab="dash" class="on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 15a8 8 0 0 1 16 0"/><path d="M12 15l4.2-3.2"/></svg>Dashboard</button>
+  <button data-tab="trend"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 16l5-5 4 3 7-8"/><path d="M4 20h16"/></svg>Andamento</button>
+  <button data-tab="prof"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 18h4v-4h4v-4h4V6h2"/></svg>Profilo</button>
+  <button data-tab="conf"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M12 4v2M12 18v2M4 12h2M18 12h2M6.3 6.3l1.4 1.4M16.3 16.3l1.4 1.4M17.7 6.3l-1.4 1.4M7.7 16.3l-1.4 1.4"/></svg>Impostazioni</button>
+  <button data-tab="sys"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="7" width="10" height="10" rx="1.5"/><path d="M10 3v2M14 3v2M10 19v2M14 19v2M3 10h2M3 14h2M19 10h2M19 14h2"/></svg>Sistema</button>
+ </nav>
+</header>
+<main>
+
+<section class="tab on" id="tab-dash">
+ <div id="alerts"></div>
+ <div class="card hero" id="hero">
+  <div class="herotop"><span class="probe probe-mosto"></span><span class="k" id="l0">Mosto</span>
+   <span id="armbadge" class="badge off">DISARMATO</span></div>
+  <div class="heronum mono" id="t0">--.-</div>
+  <div class="setchip">&#9678; set <span class="mono" id="sp">--</span></div>
+  <div class="outrow"><span class="outpill" id="outs">riposo</span><span class="sub" id="outsub"> </span></div>
+ </div>
+ <div class="cards">
+  <div class="card tile"><span class="probe probe-camera"></span><span class="k" id="l1">Camera</span><div class="v mono" id="t1">--.-</div><div class="sub"> </div></div>
+  <div class="card tile"><span class="probe probe-amb"></span><span class="k" id="l2">Ambiente</span><div class="v mono" id="t2">--.-</div><div class="sub"> </div></div>
+  <div class="card tile"><span class="probe probe-grav"></span><span class="k">Densità</span><div class="v mono" id="grav">--</div>
+   <div class="sub" id="gravage"> </div></div>
+ </div>
+
+ <div class="panel">
+  <h2>Marcia <span id="modetxt" class="muted"></span></h2>
+  <div id="runcard"></div>
+  <div class="row" id="profctl">
+   <label class="f">profilo<select id="profsel"></select></label>
+   <label class="f">nome cotta (opzionale)<input id="batchname" size="12" maxlength="40"></label>
+   <label class="f">partenza ritardata (opzionale)<input type="datetime-local" id="delaystart"></label>
+   <button class="b" id="bstart">Avvia</button>
+  </div>
+  <div class="muted" id="profpreview"></div>
+  <div class="row" id="crashrow" style="display:none">
+   <label class="f">cold crash fino a (°C)<input type="number" id="cc_t" step="0.5" min="-1" max="12" value="2"></label>
+   <label class="f">e mantieni (giorni)<input type="number" id="cc_d" step="0.5" min="0.5" max="30" value="3"></label>
+   <button class="b sec" id="bcrash">Esegui cold crash</button>
+  </div>
+  <div class="row">
+   <button class="b sec" id="bpause">Pausa</button>
+   <button class="b sec" id="bresume">Riprendi</button>
+   <button class="b sec" id="bskip">Salta step</button>
+   <button class="b danger" id="bstop">Stop</button>
+  </div>
+  <details class="manual"><summary>Controlli manuali</summary>
+   <div class="manualbody">
+    <div class="row">
+     <label class="f">setpoint manuale (step corrente)
+      <span><input type="number" step="any" min="0.01" id="ovr"> <button class="b sec" id="bovr">Applica</button></span></label>
+     <label class="f">termostato fisso
+      <span><input type="number" step="any" id="thsp"> <button class="b sec" id="bth">Attiva</button>
+      <button class="b sec" id="bthoff">Spegni</button></span></label>
+    </div>
+   </div>
+  </details>
+  <div class="muted" id="stepinfo"></div>
+ </div>
+
+</section>
+
+<section class="tab" id="tab-trend">
+ <div class="panel">
+  <h2>Temperatura</h2>
+  <div class="row range" id="ranges">
+   <button data-h="6">6 h</button><button data-h="24" class="on">24 h</button>
+   <button data-h="48">48 h</button><button data-h="168">7 g</button><button data-h="336">14 g</button>
+   <a class="muted" id="csv" href="/api/log.csv" style="margin-left:auto">scarica CSV</a>
+  </div>
+  <div class="legend">
+   <span><i style="background:var(--s1)"></i>mosto</span>
+   <span><i style="background:var(--s2)"></i>camera</span>
+   <span><i style="background:var(--s3)"></i>ambiente</span>
+   <span><i style="background:var(--ink2);height:2px;width:14px;border-radius:0"></i>setpoint</span>
+   <span><i style="background:var(--axis);height:2px;width:14px;border-radius:0"></i>piano</span>
+   <span><i style="background:var(--serious)"></i>caldo</span>
+   <span><i style="background:var(--s1);opacity:.85"></i>freddo</span>
+  </div>
+  <div class="chartwrap"><canvas id="tchart"></canvas><div class="tip" id="ttip"></div></div>
+ </div>
+ <div class="panel">
+  <h2>Fermentazione <span class="muted" id="ferm_mode"></span></h2>
+  <div class="cards">
+   <div class="card tile"><span class="k">OG</span><div class="v mono" id="ferm_og">--</div><div class="sub">densità iniziale</div></div>
+   <div class="card tile"><span class="k">SG attuale</span><div class="v mono" id="ferm_sg">--</div><div class="sub" id="ferm_age"> </div></div>
+   <div class="card tile"><span class="k">Attenuazione</span><div class="v mono" id="ferm_att">--</div><div class="sub" id="ferm_target"> </div></div>
+   <div class="card tile"><span class="k">ABV stimato</span><div class="v mono" id="ferm_abv">--</div><div class="sub">% alcol vol.</div></div>
+   <div class="card tile"><span class="k">Attività</span><div class="v mono" id="ferm_rate">--</div><div class="sub">punti/giorno (24h)</div></div>
+   <div class="card tile"><span class="k">Giorni</span><div class="v mono" id="ferm_days">--</div><div class="sub" id="ferm_stab"> </div></div>
+  </div>
+  <div class="muted" id="ferm_isp" style="margin:8px 0"></div>
+  <details class="manual"><summary>Densità iniziale (OG) manuale</summary>
+   <div class="manualbody">
+    <div class="muted" style="margin-bottom:6px">Con un profilo avviato l'OG viene catturata in automatico dalla prima lettura iSpindel. In modalità termostato, o per usare il valore misurato col densimetro, impostala qui a mano.</div>
+    <div class="row">
+     <label class="f">OG<input type="number" step="0.001" id="og_input"></label>
+     <button class="b sec" id="bog_set">Imposta</button>
+     <button class="b sec" id="bog_reset">Auto (ricattura)</button>
+    </div>
+   </div>
+  </details>
+  <div class="legend"><span><i style="background:var(--s7)"></i>densità</span></div>
+  <div class="chartwrap"><canvas id="gchart"></canvas></div>
+ </div>
+</section>
+
+<section class="tab" id="tab-prof">
+ <div class="panel">
+  <h2>Libreria profili</h2>
+  <div class="row">
+   <select id="libsel"></select>
+   <button class="b sec" id="bnewprof">Nuovo</button>
+   <button class="b sec" id="bdupprof">Duplica</button>
+   <button class="b danger" id="bdelprof">Elimina</button>
+   <button class="b" id="buse" style="display:none">Usa modello</button>
+   <button class="b sec" id="bedit" style="display:none">Modifica…</button>
+  </div>
+  <div class="muted" id="profdesc"></div>
+  <label class="f">nome del profilo<input id="profname" maxlength="32"></label>
+  <div id="steps"></div>
+  <div class="row"><button class="b sec" id="baddstep">+ step</button>
+   <button class="b" id="bsaveprof">Salva profilo</button>
+   <button class="b sec" id="bexport">Esporta</button>
+   <button class="b sec" id="bimport">Importa…</button>
+   <input type="file" id="fimport" accept=".json,application/json" style="display:none">
+  </div>
+  <div class="muted" id="profsummary"></div>
+  <div class="muted">Max 12 step. La fermentazione in corso lavora su una copia:
+   modificare la libreria non la tocca.</div>
+ </div>
+</section>
+
+<section class="tab" id="tab-conf">
+ <div class="grid2">
+  <div class="panel"><h2>Rete WiFi</h2>
+   <div class="row"><button class="b sec" id="bscan">Cerca reti</button>
+    <select id="c_ssidsel" style="display:none;max-width:230px"></select></div>
+   <label class="f">SSID<input id="c_ssid"></label>
+   <label class="f">Password<input id="c_wpass" type="password" placeholder="*** (vuoto = non cambiare)"></label>
+   <label class="f"><span><input type="checkbox" id="c_wopen"> rete aperta (senza password)</span></label>
+   <label class="f"><span><input type="checkbox" id="c_dhcp"> DHCP</span></label>
+   <div id="staticip">
+    <label class="f">IP<input id="c_ip"></label>
+    <label class="f">Netmask<input id="c_mask"></label>
+    <label class="f">Gateway<input id="c_gw"></label>
+    <label class="f">DNS<input id="c_dns"></label>
+   </div>
+   <label class="f">Password SoftAP di soccorso (min 8)<input id="c_appass" type="password" placeholder="***"></label>
+   <label class="f">SoftAP dopo N minuti di rete giù<input type="number" id="c_apmin" min="1" max="60"></label>
+  </div>
+  <div class="panel"><h2>Sistema</h2>
+   <label class="f">Nome (mDNS: nome.local)<input id="c_host"></label>
+   <label class="f">Password UI/OTA (utente: admin)<input id="c_uipass" type="password" placeholder="***"></label>
+   <label class="f"><span><input type="checkbox" id="c_ntp"> NTP attivo</span></label>
+   <label class="f">Server NTP<input id="c_ntpsrv"></label>
+   <label class="f">Timezone (POSIX)<input id="c_tz"></label>
+  </div>
+  <div class="panel"><h2>Sonde DS18B20</h2>
+   <div class="row"><button class="b sec" id="bprobescan">Rileva sonde</button>
+    <span class="muted">per riconoscerle: scaldane una in mano e ripremi</span></div>
+   <div id="probecfg"></div>
+  </div>
+  <div class="panel"><h2>Regolazione</h2>
+   <label class="f"><span><input type="checkbox" id="c_pid"> PID sul caldo (sennò isteresi)</span></label>
+   <label class="f"><span><input type="checkbox" id="c_pred"> Spegnimento predittivo (impara l'inerzia del frigo e anticipa lo stop)</span></label>
+   <label class="f">Tolleranza ±°C<input type="number" step="any" id="c_tol"></label>
+   <div class="row">
+    <label class="f">kP<input type="number" step="any" id="c_kp"></label>
+    <label class="f">kI<input type="number" step="any" id="c_ki"></label>
+    <label class="f">kD<input type="number" step="any" id="c_kd"></label>
+   </div>
+   <label class="f">Finestra PID (ms)<input type="number" id="c_win"></label>
+   <div class="row">
+    <label class="f">Piena potenza sotto (°C)<input type="number" step="any" id="c_fpb"></label>
+    <label class="f">Taglio sopra (°C)<input type="number" step="any" id="c_cut"></label>
+   </div>
+   <label class="f">Riposo compressore (min)<input type="number" id="c_rest"></label>
+   <div class="row">
+    <label class="f">Marcia min. frigo (s)<input type="number" id="c_minon"></label>
+    <label class="f">Anti-chattering (s)<input type="number" id="c_minst"></label>
+    <label class="f">Inversione caldo/freddo (s)<input type="number" id="c_minsw"></label>
+   </div>
+  </div>
+  <div class="panel"><h2>iSpindel</h2>
+   <div class="muted">Endpoint da impostare sullo iSpindel: <b>http://IP/ispindel</b> (HTTP, porta 80)</div>
+   <label class="f">Dato stantio dopo (min)<input type="number" id="c_stale"></label>
+   <label class="f">Allarme batteria (V)<input type="number" step="any" id="c_batt"></label>
+   <label class="f">Unità<select id="c_gunit"><option value="sg">SG</option><option value="plato">°Plato</option></select></label>
+   <label class="f">Token (opzionale: se impostato, lo iSpindel deve inviarlo)
+    <input id="c_itok" type="password" placeholder="*** (vuoto = nessun controllo)"></label>
+   <div id="c_dens"></div>
+   <div class="muted">L'elenco contiene i densimetri che hanno già trasmesso al termostato.
+    Ogni camera segue <b>solo</b> lo strumento che le è assegnato: gli altri non ne
+    influenzano densità, OG e allarmi, ma restano utilizzabili per la calibrazione.
+    La <b>correzione</b> è la taratura di quello strumento, non del sistema: due densimetri
+    hanno tarature diverse.
+    <br>Una camera <b>senza densimetro</b> non avvia profili che contengono step a densità,
+    e se ne sta già eseguendo uno resta ferma segnalandolo — non avanza al limite di durata,
+    perché avanzerebbe senza aver mai misurato.</div>
+  </div>
+  <div class="panel"><h2>Calibrazione densimetro</h2>
+   <div class="muted">Lo iSpindel misura un <b>angolo</b> e lo converte in densità con un
+    polinomio che sta a bordo suo. Qui raccogli le coppie angolo/densità: immergilo in una
+    soluzione, misurala col densimetro e registra il punto. Alla fine copi il polinomio
+    calcolato nel campo <i>Polynominal</i> del portale dello iSpindel.</div>
+   <div id="cal_live" class="muted">—</div>
+   <div class="row">
+    <button class="b sec" id="cal_dip">Ho immerso lo strumento</button>
+    <button class="b sec" id="cal_refresh">Aggiorna</button>
+   </div>
+   <div id="cal_wait" class="muted"></div>
+   <div class="row">
+    <label class="f"><span id="cal_glabel">Densità misurata</span>
+     <input type="number" step="0.001" id="cal_g" placeholder="es. 1.040"></label>
+    <label class="f">Densimetro tarato a (°C)<input type="number" step="0.5" id="cal_calt"
+     value="20" style="width:70px"></label>
+    <button class="b" id="cal_add">Registra punto</button>
+   </div>
+   <div id="cal_corr" class="muted"></div>
+   <div id="cal_pts"></div>
+   <div id="cal_out"></div>
+   <div class="row"><button class="b danger" id="cal_clear">Cancella tutti i punti</button></div>
+  </div>
+  <div class="panel"><h2>Display OLED</h2>
+   <label class="f"><span><input type="checkbox" id="c_oled"> Abilitato</span></label>
+   <label class="f">Driver<select id="c_odrv"><option value="ssd1306">SSD1306</option><option value="sh1106">SH1106</option></select></label>
+   <label class="f">Indirizzo<select id="c_oaddr"><option value="60">0x3C</option><option value="61">0x3D</option></select></label>
+   <label class="f"><span><input type="checkbox" id="c_oflip"> Ruota 180°</span></label>
+  </div>
+  <div class="panel"><h2>Log</h2>
+   <label class="f">Campione ogni (min)<input type="number" id="c_lsm" min="1"></label>
+   <label class="f">Retention (giorni)<input type="number" id="c_lrd" min="1"></label>
+  </div>
+  <div class="panel"><h2>MQTT / Home Assistant</h2>
+   <label class="f"><span><input type="checkbox" id="c_mq"> Abilitato</span></label>
+   <label class="f">Broker<input id="c_mqh"></label>
+   <label class="f">Porta<input type="number" id="c_mqp"></label>
+   <label class="f">Utente<input id="c_mqu"></label>
+   <label class="f">Password<input id="c_mqpw" type="password" placeholder="***"></label>
+   <label class="f">Topic base<input id="c_mqt"></label>
+   <label class="f"><span><input type="checkbox" id="c_mqha"> Discovery Home Assistant</span></label>
+  </div>
+  <div class="panel"><h2>OTA</h2>
+   <label class="f"><span><input type="checkbox" id="c_ota"> Aggiornamento da web UI abilitato</span></label>
+  </div>
+ </div>
+ <div class="row" style="margin-top:12px"><button class="b" id="bsavecfg">Salva impostazioni</button>
+  <span class="muted">Le modifiche a rete/display/MQTT/orologio riavviano il dispositivo.</span></div>
+</section>
+
+<section class="tab" id="tab-sys">
+ <div class="panel"><h2>Stato</h2><div id="sysinfo" class="mono muted"></div></div>
+ <div class="panel"><h2>Mapping uscite e armamento</h2>
+  <div class="muted">Le uscite nascono DISARMATE. Identifica i relè col test qui sotto (a carichi
+  scollegati!), poi assegna e ARMA. Carichi reali: frigo + cavo riscaldante.</div>
+  <div class="row">
+   <label class="f">Relè FREDDO (frigo)<select id="a_cool"></select></label>
+   <label class="f">Relè CALDO (cavo)<select id="a_heat"></select></label>
+   <button class="b" id="barm">ARMA</button>
+   <button class="b danger" id="bdisarm">DISARMA</button>
+  </div>
+ </div>
+ <div class="panel"><h2>Test manuale relè <span class="muted">(solo a sistema disarmato)</span></h2>
+  <div class="row" id="relbtns"></div>
+  <div class="row"><button class="b sec" id="btestoff">Chiudi test (tutto spento)</button></div>
+ </div>
+ <div class="panel"><h2>Sonde: affidabilità e taratura</h2>
+  <div class="muted">Le statistiche partono da zero a ogni riavvio del termostato.
+   Una sonda sana ha letture perse vicine allo 0%: valori più alti indicano un contatto
+   incerto o un cavo disturbato.</div>
+  <div id="probe_err" style="color:var(--warn)"></div>
+  <div id="boot_tbl" style="margin-top:10px"></div>
+  <div id="probe_tbl"></div>
+  <div class="row"><button class="b sec" id="bprobe">Aggiorna</button>
+   <button class="b sec" id="bprobereset">Azzera statistiche</button></div>
+  <details class="manual" id="cal_open" style="margin-top:8px">
+   <summary>Taratura con riferimento noto</summary>
+   <div class="muted" style="margin:6px 0">Immergi le sonde da tarare in un riferimento a
+    temperatura nota e <b>attendi l'equilibrio</b> (almeno 5 minuti, finché i valori grezzi
+    smettono di scendere). Il riferimento più preciso e gratuito è il <b>ghiaccio fondente</b>:
+    un bicchiere colmo di ghiaccio tritato con un dito d'acqua, mescolato, sta a 0,0 °C.
+    In alternativa usa dell'acqua con un termometro di cui ti fidi.</div>
+   <div class="muted" style="margin:6px 0">La taratura usa la <b>media dell'ultimo minuto</b>
+    di letture, non un valore istantaneo, e viene rifiutata se in quel minuto la sonda si è
+    mossa di più di 0,2 °C: è il modo in cui il termostato verifica da solo che il bagno sia
+    fermo. Scarti oltre 5 °C vengono rifiutati, perché a quel punto il problema non è la
+    taratura. Per tarare la sonda di controllo le uscite devono essere <b>disarmate</b>.</div>
+   <div><b>Sonde da tarare</b> <span class="muted">(spunta solo quelle immerse nel
+    riferimento)</span></div>
+   <div id="cal_sel" style="margin:6px 0"></div>
+   <div class="row">
+    <label class="f">Temperatura di riferimento (°C)
+     <input type="number" step="any" id="cal_ref" value="0"></label>
+    <button class="b" id="bprobecal">Calcola e applica offset</button>
+   </div>
+  </details>
+ </div>
+ <div class="panel"><h2>Diagnostica bus</h2>
+  <div class="row"><button class="b sec" id="bi2c">Scan I2C</button>
+   <button class="b sec" id="bow">Scan OneWire</button></div>
+  <div id="scanout" class="mono muted"></div>
+ </div>
+ <div class="panel"><h2>Orologio</h2>
+  <div class="row"><span id="clock" class="mono"></span>
+   <button class="b sec" id="bsynctime">Sincronizza dall'orologio del browser</button></div>
+ </div>
+ <div class="panel"><h2>Aggiornamento firmware (OTA)</h2>
+  <div class="row"><input type="file" id="fwfile" accept=".bin">
+   <button class="b" id="bupload">Carica e installa</button></div>
+  <div id="otaout" class="muted"></div>
+ </div>
+ <div class="panel"><h2>Manutenzione</h2>
+  <div class="row"><button class="b sec" id="breboot">Riavvia</button>
+   <button class="b danger" id="bfactory">Reset di fabbrica</button></div>
+ </div>
+</section>
+</main>
+<div id="snack"></div>
+<div id="login" style="display:none;position:fixed;inset:0;background:var(--bg);z-index:50">
+ <div class="panel" style="max-width:340px;margin:16vh auto 0">
+  <h2>Accesso</h2>
+  <label class="f">password (utente: admin)
+   <input type="password" id="loginpw" autocomplete="current-password"></label>
+  <div class="row"><button class="b" id="blogin">Entra</button>
+   <span class="muted">resti collegato su questo dispositivo</span></div>
+  <div class="muted" id="loginmsg"></div>
+ </div>
+</div>
+
+<script>
+"use strict";
+const $=id=>document.getElementById(id);
+const css=v=>getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+let ST=null, CFG=null, LOG=[], rangeH=24, RUNPROF=null, LIB=[], LIBID=0, PROBETIMER=0;
+// TPLID = indice del modello di fabbrica in visione, null se stai guardando un tuo profilo.
+let TPLID=null, READONLY=false, RUNPROFKEY="";
+// Nome del modello da cui deriva la copia in corso: obbliga a rinominarla.
+let DERIVFROM="";
+// true finché il profilo in editor non è mai stato salvato sul dispositivo.
+let NONSALVATO=false;
+// false finché una lettura dell'elenco non riesce: blocca le operazioni distruttive.
+let LIBOK=false;
+
+// ---- tabs ----
+document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>{
+ document.querySelectorAll("nav button").forEach(x=>x.classList.remove("on"));
+ document.querySelectorAll("section.tab").forEach(x=>x.classList.remove("on"));
+ b.classList.add("on"); $("tab-"+b.dataset.tab).classList.add("on");
+ if(b.dataset.tab==="conf"&&!CFG) loadConfig();
+ if(b.dataset.tab==="conf") calibLoad();
+ if(b.dataset.tab==="prof") loadProfile();
+ if(b.dataset.tab==="trend"){loadLog();renderFerment();}
+ // Il pannello sonde si aggiorna da solo mentre è a schermo: serve a vedere i valori
+ // grezzi stabilizzarsi durante la taratura senza premere "Aggiorna" ogni minuto.
+ probeTimerStop();
+ if(b.dataset.tab==="sys"){probeLoad();PROBETIMER=setInterval(probeLoad,15000);}
+});
+
+// --- Camera selezionata -------------------------------------------------------------
+// Il firmware serve gli endpoint che dipendono dalla camera in due forme: quella storica
+// (/api/status, camera 1) e quella esplicita (/api/ch/<n>/status). La forma per camera
+// esiste SOLO se il dispositivo ne gestisce piu' di una — il firmware non la registra a
+// camera singola, perche' ogni rotta costa heap. Quindi qui: con CH=1 si usano sempre i
+// percorsi storici, che funzionano in entrambe le configurazioni.
+let CH=1,NCH=1;
+try{const v=+localStorage.getItem("ax_ch");if(v>=1)CH=v}catch(e){}
+// Percorsi serviti PER CAMERA. Gli altri (configurazione, libreria profili, taratura,
+// diagnostica, orologio, OTA) sono di dispositivo e non vanno mai riscritti.
+const CH_PATHS=["/api/status","/api/profile","/api/setpoint","/api/thermostat",
+ "/api/gravity/og","/api/outputs/arm","/api/outputs/disarm","/api/log","/api/log.csv"];
+function chPath(p){
+ if(CH<2||!p.startsWith("/api/"))return p;
+ const base=p.split("?")[0];
+ // Confronto esatto oppure sotto-percorso: cosi' /api/profile/start viene riscritto ma
+ // /api/profiles (la LIBRERIA, che e' condivisa) no.
+ if(!CH_PATHS.some(x=>base===x||base.startsWith(x+"/")))return p;
+ return "/api/ch/"+CH+p.slice(4);
+}
+function renderChSel(n,label){
+ NCH=n;const el=$("chsel");
+ if(!(n>1)){el.hidden=true;el.innerHTML="";if(CH!==1){CH=1;try{localStorage.removeItem("ax_ch")}catch(e){}}return}
+ if(CH>n){CH=1;try{localStorage.setItem("ax_ch",CH)}catch(e){}}
+ // Il nome della camera corrente arriva da /api/status; per le altre si mostra il numero
+ // finche' non le si visita (lo stato descrive una camera per volta).
+ if(!renderChSel.nomi)renderChSel.nomi={};
+ if(label)renderChSel.nomi[CH]=label;
+ let h="";
+ for(let i=1;i<=n;i++)h+='<button type="button" data-ch="'+i+'"'+(i===CH?' class="on"':'')+
+  ' title="'+esc(renderChSel.nomi[i]||("Camera "+i))+'">'+esc(renderChSel.nomi[i]||("Camera "+i))+'</button>';
+ if(el.innerHTML!==h)el.innerHTML=h;
+ el.hidden=false;
+}
+$("chsel").addEventListener("click",e=>{
+ const b=e.target.closest("button[data-ch]");if(!b)return;
+ const n=+b.dataset.ch;if(n===CH)return;
+ CH=n;try{localStorage.setItem("ax_ch",CH)}catch(e){}
+ renderChSel(NCH);
+ // Si ricarica tutto cio' che dipende dalla camera. La libreria profili no: e' condivisa.
+ const c=$("csv");if(c)c.href=chPath(c.getAttribute("href").replace(/^\/api\/ch\/\d+/,"/api"));
+ refresh();loadLog();loadProfile();
+});
+
+async function api(path,opt){const r=await fetch(chPath(path),opt);
+ if(!r.ok){let m="errore "+r.status;try{m=(await r.json()).error||m}catch(e){}
+  // Con l'overlay di login a schermo il ciclo automatico continuerebbe a
+  // interrogare /api/probes dietro la maschera, un 401 ogni 15 s.
+  if(r.status===401&&path!=="/api/login"){$("login").style.display="block";probeTimerStop();}
+  throw new Error(m)} return r.json()}
+$("blogin").onclick=async()=>{
+ try{await post("/api/login",{password:$("loginpw").value});
+  $("login").style.display="none";$("loginpw").value="";$("loginmsg").textContent="";
+  refresh();loadLog();loadLibrary();
+  document.dispatchEvent(new Event("ax-login"));
+  toast("collegato ✓")}
+ catch(e){$("loginmsg").textContent=e.message}};
+$("loginpw").addEventListener("keydown",e=>{if(e.key==="Enter")$("blogin").click()});
+const post=(p,b)=>api(p,{method:"POST",body:b?JSON.stringify(b):"{}"});
+const put=(p,b)=>api(p,{method:"PUT",body:JSON.stringify(b)});
+// Messaggio in pagina: iOS a volte sopprime alert() nelle web-app a tutto schermo.
+let snackT=0;
+function toast(msg){const s=$("snack");s.textContent=msg;s.style.display="block";
+ clearTimeout(snackT);snackT=setTimeout(()=>{s.style.display="none"},4000)}
+
+// ---- status ----
+function fmtAge(s){if(s<90)return s+" s";if(s<5400)return Math.round(s/60)+" min";
+ return (s/3600).toFixed(1)+" h"}
+// Rilevamento "dati fermi": se lo status non si aggiorna da più di qualche ciclo, la
+// pagina lo dice a chiare lettere. Senza, una dashboard congelata (firmware in crash,
+// WiFi giù, blackout del controllore) resta indistinguibile da una viva — su un
+// dispositivo non sorvegliato è un guasto a sé.
+let lastRefreshOk=Date.now();
+function markFresh(){lastRefreshOk=Date.now();const b=document.getElementById("offlineBanner");if(b)b.style.display="none";}
+function markStale(){
+ if(Date.now()-lastRefreshOk<8000)return;  // grazia: qualche ciclo perso è normale
+ let b=document.getElementById("offlineBanner");
+ if(!b){b=document.createElement("div");b.id="offlineBanner";
+  b.style.cssText="position:fixed;top:0;left:0;right:0;z-index:9999;background:#b23b3b;color:#fff;text-align:center;padding:8px;font-weight:bold;box-shadow:0 2px 6px rgba(0,0,0,.4)";
+  document.body.appendChild(b);}
+ const age=Math.round((Date.now()-lastRefreshOk)/1000);
+ b.textContent="⚠ CONNESSIONE PERSA — i dati mostrati sono fermi da "+age+" s (ultimo aggiornamento "+new Date(lastRefreshOk).toLocaleTimeString()+")";
+ b.style.display="block";
+}
+async function refresh(){try{
+ const st=await api("/api/status"); ST=st;
+ $("fw").textContent="v"+st.fw;
+ // Il dispositivo dichiara quante camere gestisce e come si chiama quella servita.
+ renderChSel(st.chambers||1,st.chamberLabel);
+ for(let i=0;i<3;i++){const t=st.temps[i];
+  $("l"+i).textContent=t.label;
+  $("t"+i).innerHTML=t.valid?t.c.toFixed(1)+"<small> °C</small>":
+   (t.configured?"--.-":"<small>n.c.</small>")}
+ $("sp").textContent=st.setpoint!==undefined?st.setpoint.toFixed(1)+" °C":"--";
+ if(st.gravity.has){$("grav").textContent=(+st.gravity.value).toFixed(st.gravity.unit==="plato"?1:3);
+  $("gravage").textContent=(st.gravity.stale?"STANTIA — ":"")+fmtAge(st.gravity.ageSec)+
+   " fa · batt "+st.gravity.battery+" V"}
+ else{$("grav").textContent="--";$("gravage").textContent="nessun dato iSpindel"}
+ $("armbadge").className="badge "+(st.outputs.armed?"on":"off");
+ $("armbadge").textContent=st.outputs.armed?"ARMATO":"DISARMATO";
+ let o="riposo",sub="";
+ if(st.outputs.heat)o="RISCALDA";
+ if(st.outputs.cool)o="RAFFREDDA";
+ if(st.outputs.testMode)o="TEST MANUALE";
+ if(!st.outputs.heat&&!st.outputs.cool&&st.outputs.coolBlockedSec>0)
+  sub="protezione compressore: "+st.outputs.coolBlockedSec+" s";
+ // Solo col PID attivo (duty>0): a isteresi il duty è 0 e "PID 0 %" col caldo acceso
+ // sarebbe un numero falso e fuorviante.
+ if(st.outputs.heat&&ST.mode!==0&&st.outputs.pidDuty>0)sub="PID "+st.outputs.pidDuty+" %";
+ $("outs").textContent=o;$("outsub").textContent=sub;
+ $("hero").dataset.state=st.outputs.heat?"heat":st.outputs.cool?"cool":"";
+ const modes=["FERMO","TERMOSTATO","PROFILO"];
+ let mt=modes[st.mode]||"";
+ if(st.mode===2){
+  if(st.profile.name)mt+=" «"+st.profile.name+"»";
+  mt+=" — step "+(st.profile.stepEnIdx+1)+"/"+st.profile.stepEnCount;
+  if(st.profile.paused)mt+=" (pausa)"; if(st.profile.completed)mt+=" (completato)";
+  if(st.profile.waitingDelayedStart)mt+=" (attesa partenza)";
+  // La chiave identifica la cotta in corso: senza, avviando un altro profilo da un
+  // secondo client resterebbe a schermo il piano di quello precedente.
+  const key=(st.profile.name||"")+"|"+(st.profile.startEpoch||0);
+  if(!RUNPROF||RUNPROFKEY!==key){RUNPROFKEY=key;
+   // Applica la risposta SOLO se la chiave è ancora quella richiesta: una fetch più lenta
+   // per una cotta ormai cambiata (risposte fuori ordine) lascerebbe a schermo il piano vecchio.
+   const reqKey=key;
+   api("/api/profile").then(p=>{if(RUNPROFKEY===reqKey){RUNPROF=p;drawCharts()}})
+    .catch(()=>{if(RUNPROFKEY===reqKey)RUNPROF=null});}
+ }else{RUNPROF=null;RUNPROFKEY="";}
+ $("modetxt").textContent=mt;
+ let si="";
+ if(st.mode===2&&st.profile.batch)si="cotta: "+st.profile.batch+"  · ";
+ if(st.mode===2&&st.profile.stepEndsAt)
+  si+="fine step prevista: "+new Date(st.profile.stepEndsAt*1000).toLocaleString("it-IT");
+ if(st.profile.overrideActive)si+="  · setpoint manuale attivo";
+ $("stepinfo").textContent=si;
+ // Ha senso solo se il termostato sta gia' regolando: a impianto fermo non c'e' nulla
+ // da raffreddare, e su un profilo appena avviato sarebbe solo un modo per rovinarlo.
+ $("crashrow").style.display=((st.mode===1||st.mode===2)&&
+  !st.profile.waitingDelayedStart)?"":"none";
+ renderRun();
+ const al=$("alerts");al.innerHTML="";
+ st.alarms.forEach(a=>{const d=document.createElement("div");
+  d.className="alert "+(a.startsWith("uscite")||a.startsWith("PASSWORD")?"warn":"crit");
+  d.textContent="⚠ "+a;al.appendChild(d)});
+ $("sysinfo").textContent="fw v"+st.fw+" · heap "+st.heap+" B · IP "+st.net.ip+
+  (st.net.ap?" (SoftAP attivo)":"")+" · RSSI "+st.net.rssi+" dBm · "+
+  (st.time.trusted?"orologio OK":"OROLOGIO NON AFFIDABILE")+
+  (st.time.ntp?" (NTP)":"")+" · "+st.time.local;
+ $("clock").textContent=st.time.local+(st.time.trusted?"":"  (NON AFFIDABILE)");
+ renderFerment();
+ markFresh();
+}catch(e){markStale();}}
+
+// ---- comandi marcia ----
+$("bstart").onclick=async()=>{const v=$("delaystart").value;
+ const b={profileId:+$("profsel").value||0,batchName:$("batchname").value.trim()};
+ if(v)b.delayedStartAt=Math.floor(new Date(v).getTime()/1000);
+ try{await post("/api/profile/start",b);RUNPROF=null;toast("profilo avviato ✓");refresh()}
+ catch(e){toast("avvio fallito: "+e.message)}};
+$("profsel").onchange=async()=>{
+ const id=+$("profsel").value;
+ if(!id){$("profpreview").textContent="";return}
+ try{const p=await api("/api/profiles/"+id);
+  $("profpreview").textContent=describeSteps(p.steps)}catch(e){}};
+$("bstop").onclick=()=>post("/api/profile/stop").then(refresh).catch(e=>toast(e.message));
+$("bpause").onclick=()=>post("/api/profile/pause").then(refresh).catch(e=>toast(e.message));
+$("bresume").onclick=()=>post("/api/profile/resume").then(refresh).catch(e=>toast(e.message));
+$("bskip").onclick=()=>post("/api/profile/skip").then(refresh).catch(e=>toast(e.message));
+$("bovr").onclick=()=>{const v=parseFloat($("ovr").value);
+ if(isNaN(v))return toast("valore mancante");
+ post("/api/setpoint",{value:v}).then(refresh).catch(e=>toast(e.message))};
+$("bth").onclick=()=>{const v=parseFloat($("thsp").value);
+ if(isNaN(v))return toast("setpoint mancante");
+ post("/api/thermostat",{on:true,setpoint:v}).then(refresh).catch(e=>toast(e.message))};
+$("bthoff").onclick=()=>post("/api/thermostat",{on:false}).then(refresh).catch(e=>toast(e.message));
+
+// ---- grafici ----
+function drawCharts(){
+ const T=$("tchart"),G=$("gchart");
+ drawTemp(T,$("ttip"));drawGrav(G);
+}
+function setupCanvas(cv){const r=cv.getBoundingClientRect(),d=devicePixelRatio||1;
+ cv.width=r.width*d;cv.height=r.height*d;
+ const x=cv.getContext("2d");x.scale(d,d);return[x,r.width,r.height]}
+function niceStep(span,target){const raw=span/target,p=Math.pow(10,Math.floor(Math.log10(raw)));
+ for(const m of[1,2,5,10])if(raw<=m*p)return m*p;return 10*p}
+function drawTemp(cv,tip){
+ const[x,W,H]=setupCanvas(cv);
+ const padL=34,padR=8,padT=8,bandH=14,padB=22+bandH;
+ const w=W-padL-padR,h=H-padT-padB;
+ x.clearRect(0,0,W,H);
+ if(!LOG.length){x.fillStyle=css("--muted");x.font="13px system-ui";
+  x.fillText("nessun dato nel periodo",padL,H/2);return}
+ const plan=planPoints();
+ const t0=LOG[0].e;
+ let t1=LOG[LOG.length-1].e||t0+1;
+ if(plan){const pe=plan.pts[plan.pts.length-1].e;
+  t1=Math.min(Math.max(t1,pe),ST.time.epoch+35*86400)}
+ let lo=99,hi=-99;
+ LOG.forEach(p=>["t","a","b","s"].forEach(k=>{if(p[k]!==undefined){
+  if(p[k]<lo)lo=p[k];if(p[k]>hi)hi=p[k]}}));
+ if(plan)plan.pts.forEach(p=>{if(p.s<lo)lo=p.s;if(p.s>hi)hi=p.s});
+ if(lo>hi){lo=0;hi=1}
+ const span=Math.max(1,hi-lo);lo-=span*.1;hi+=span*.1;
+ const X=e=>padL+(e-t0)/(t1-t0||1)*w, Y=v=>padT+(hi-v)/(hi-lo)*h;
+ // griglia orizzontale
+ x.strokeStyle=css("--grid");x.lineWidth=1;x.fillStyle=css("--muted");x.font="11px system-ui";
+ const ys=niceStep(hi-lo,4);
+ for(let v=Math.ceil(lo/ys)*ys;v<=hi;v+=ys){const y=Y(v);
+  x.beginPath();x.moveTo(padL,y);x.lineTo(W-padR,y);x.stroke();
+  x.fillText(v.toFixed(ys<1?1:0),2,y+4)}
+ // asse tempo
+ const hours=(t1-t0)/3600,tstep=hours<=7?3600:hours<=30?6*3600:hours<=60?12*3600:24*3600;
+ for(let e=Math.ceil(t0/tstep)*tstep;e<=t1;e+=tstep){const d=new Date(e*1000);
+  const lab=tstep>=86400?d.toLocaleDateString("it-IT",{day:"numeric",month:"numeric"}):
+   d.getHours().toString().padStart(2,"0")+":00";
+  x.fillText(lab,X(e)-12,H-6)}
+ // bande caldo/freddo
+ const yb=padT+h+3;
+ LOG.forEach((p,i)=>{if(i===0)return;const px=X(LOG[i-1].e),qx=X(p.e);
+  if(p.h){x.fillStyle=css("--serious");x.fillRect(px,yb,Math.max(1,qx-px),5)}
+  if(p.c){x.globalAlpha=.8;x.fillStyle=css("--s1");
+   x.fillRect(px,yb+7,Math.max(1,qx-px),5);x.globalAlpha=1}});
+ // serie
+ const line=(key,color,dash)=>{x.strokeStyle=color;x.lineWidth=2;
+  x.setLineDash(dash||[]);x.beginPath();let pen=false;
+  LOG.forEach(p=>{if(p[key]===undefined){pen=false;return}
+   const px=X(p.e),py=Y(p[key]);
+   if(!pen){x.moveTo(px,py);pen=true}else x.lineTo(px,py)});
+  x.stroke();x.setLineDash([])};
+ // piano futuro del profilo (tratteggio corto, colore recessivo)
+ if(plan){
+  x.strokeStyle=css("--axis");x.lineWidth=1.5;x.setLineDash([3,3]);
+  x.beginPath();
+  plan.pts.forEach((p,i)=>{const px=X(Math.min(p.e,t1)),py=Y(p.s);
+   i?x.lineTo(px,py):x.moveTo(px,py)});
+  x.stroke();x.setLineDash([]);
+  if(plan.gravAt!==null&&plan.gravAt<=t1){
+   const gx=X(plan.gravAt);
+   x.strokeStyle=css("--axis");x.setLineDash([2,4]);
+   x.beginPath();x.moveTo(gx,padT);x.lineTo(gx,padT+h);x.stroke();x.setLineDash([]);
+   x.fillStyle=css("--muted");x.font="10px system-ui";
+   x.fillText("attesa densità",Math.min(gx+3,W-70),padT+9);
+  }
+ }
+ line("s",css("--ink2"),[5,4]);
+ line("b",css("--s3"));line("a",css("--s2"));line("t",css("--s1"));
+ // hover
+ cv.onpointermove=ev=>{const r=cv.getBoundingClientRect(),mx=ev.clientX-r.left;
+  if(mx<padL||mx>W-padR){tip.style.display="none";return}
+  const te=t0+(mx-padL)/w*(t1-t0);
+  let best=LOG[0],bd=1e18;
+  LOG.forEach(p=>{const d=Math.abs(p.e-te);if(d<bd){bd=d;best=p}});
+  const d=new Date(best.e*1000);
+  let html="<b>"+d.toLocaleString("it-IT",{day:"numeric",month:"numeric",
+   hour:"2-digit",minute:"2-digit"})+"</b>";
+  if(best.t!==undefined)html+="<br>mosto "+best.t.toFixed(2)+" °C";
+  if(best.a!==undefined)html+="<br>camera "+best.a.toFixed(2)+" °C";
+  if(best.b!==undefined)html+="<br>ambiente "+best.b.toFixed(2)+" °C";
+  if(best.s!==undefined)html+="<br>set "+best.s.toFixed(2)+" °C";
+  if(best.g!==undefined)html+="<br>densità "+best.g.toFixed(4);
+  html+="<br>"+(best.h?"caldo ON ":"")+(best.c?"freddo ON":"");
+  tip.innerHTML=html;tip.style.display="block";
+  const tw=tip.offsetWidth;
+  tip.style.left=Math.min(Math.max(0,mx-tw/2),r.width-tw)+"px";
+  tip.style.top=(ev.clientY-r.top-tip.offsetHeight-12)+"px";
+  };
+ cv.onpointerleave=()=>{tip.style.display="none"};
+}
+function drawGrav(cv){
+ const[x,W,H]=setupCanvas(cv);
+ const padL=44,padR=8,padT=6,padB=6,w=W-padL-padR,h=H-padT-padB;
+ x.clearRect(0,0,W,H);
+ const pts=LOG.filter(p=>p.g!==undefined);
+ if(pts.length<2){x.fillStyle=css("--muted");x.font="12px system-ui";
+  x.fillText("nessun dato densità",padL,H/2);return}
+ const t0=LOG[0].e,t1=LOG[LOG.length-1].e;
+ let lo=1e9,hi=-1e9;pts.forEach(p=>{if(p.g<lo)lo=p.g;if(p.g>hi)hi=p.g});
+ const span=Math.max(0.002,hi-lo);lo-=span*.15;hi+=span*.15;
+ const X=e=>padL+(e-t0)/(t1-t0||1)*w,Y=v=>padT+(hi-v)/(hi-lo)*h;
+ x.strokeStyle=css("--grid");x.fillStyle=css("--muted");x.font="11px system-ui";
+ [lo+span*.15,hi-span*.15].forEach(v=>{const y=Y(v);x.beginPath();
+  x.moveTo(padL,y);x.lineTo(W-padR,y);x.stroke();x.fillText(v.toFixed(3),2,y+4)});
+ x.strokeStyle=css("--s7");x.lineWidth=2;x.beginPath();
+ pts.forEach((p,i)=>{const px=X(p.e),py=Y(p.g);i?x.lineTo(px,py):x.moveTo(px,py)});
+ x.stroke();
+}
+async function loadLog(){try{
+ LOG=await api("/api/log?hours="+rangeH);drawCharts();renderFerment()}catch(e){}}
+// ---- metriche di fermentazione (tab Andamento) ----
+function fmtG(v,unit){return unit==='plato'?(+v).toFixed(1):(+v).toFixed(3)}
+function attenuation(og,sg,unit){
+ if(unit==='plato'){if(og<=0)return null;return (og-sg)/og*100}
+ if(og<=1)return null;return (og-sg)/(og-1)*100}
+function abvCalc(og,sg,unit){
+ if(unit==='plato'){const s=p=>1+p/(258.6-p/258.2*227.1);return (s(og)-s(sg))*131.25}
+ return (og-sg)*131.25}
+function renderFerment(){
+ if(!$("ferm_og"))return;
+ const g=ST?ST.gravity:null, unit=(g&&g.unit)||'sg';
+ const sg=(g&&g.has)?+g.value:null, og=(g&&g.og!==undefined)?+g.og:null;
+ const now=ST?ST.time.epoch:0;
+ $("ferm_og").textContent=og?fmtG(og,unit):'--';
+ $("ferm_sg").textContent=sg!==null?fmtG(sg,unit):'--';
+ $("ferm_age").textContent=(g&&g.has)?((g.stale?'STANTIA · ':'')+fmtAge(g.ageSec)+' fa'):'nessun dato';
+ let att=null,ab=null;
+ if(og&&sg!==null){att=attenuation(og,sg,unit);ab=abvCalc(og,sg,unit)}
+ $("ferm_att").innerHTML=att!==null?att.toFixed(0)+'<small> %</small>':'--';
+ $("ferm_abv").innerHTML=ab!==null?ab.toFixed(1)+'<small> %</small>':'--';
+ let tgt=null;
+ if(RUNPROF&&RUNPROF.steps){const from=(ST&&ST.profile&&ST.profile.stepIdx)||0;
+  const s=RUNPROF.steps.find((x,i)=>i>=from&&x.enabled&&x.type==='gravity');
+  if(s){if(!s.gravityMode)tgt='target '+fmtG(s.gravityTarget,unit);
+   else if(s.gravityMode===1)tgt='target att. '+s.gravityTarget+'%';
+   else tgt='attesa densità stabile'}}
+ $("ferm_target").textContent=tgt||' ';
+ // Solo da un inizio profilo REALE (>~2017): in termostato (startEpoch 0) o su timeline
+ // fittizia da boot senza RTC, il "primo punto del grafico" darebbe un'età falsa che
+ // cambia col range selezionato (1 giorno a 24 h, 12 a 14 g).
+ const startEp=(ST&&ST.profile&&ST.profile.startEpoch)||0;
+ $("ferm_days").textContent=(startEp>1500000000&&now>startEp)?((now-startEp)/86400).toFixed(1):'--';
+ const pts=LOG.filter(p=>p.g!==undefined); let rate=null,stable=null;
+ if(pts.length>=2&&now){
+  const day=pts.filter(p=>p.e>=now-86400);
+  if(day.length>=2){const hrs=(day[day.length-1].e-day[0].e)/3600;
+   if(hrs>0)rate=(day[0].g-day[day.length-1].g)/(hrs/24)}
+  const win=pts.filter(p=>p.e>=now-2*86400);
+  if(win.length>=2){let lo=1e9,hi=-1e9;win.forEach(p=>{if(p.g<lo)lo=p.g;if(p.g>hi)hi=p.g});stable=hi-lo}
+ }
+ const ptScale=unit==='plato'?1:1000;
+ $("ferm_rate").textContent=rate!==null?(rate*ptScale).toFixed(unit==='plato'?2:1):'--';
+ const stTh=unit==='plato'?0.2:0.001;
+ $("ferm_stab").textContent=stable!==null?(stable<=stTh?'densità stabile ✓':'in calo'):' ';
+ if(g&&g.has){
+  let s='iSpindel: '+(g.temp!==undefined?(+g.temp).toFixed(1)+' °C':'—');
+  if(g.angle!==undefined)s+=' · angolo '+(+g.angle).toFixed(1)+'°';
+  if(g.battery!==undefined)s+=' · batt '+(+g.battery).toFixed(2)+' V';
+  if(g.rssi)s+=' · '+g.rssi+' dBm';
+  $("ferm_isp").textContent=s;
+ }else $("ferm_isp").textContent="nessun dato iSpindel — imposta sull'iSpindel l'endpoint http://"+(ST?ST.net.ip:'IP')+"/ispindel";
+ $("ferm_mode").textContent=(ST&&ST.profile&&ST.profile.batch)?('cotta: '+ST.profile.batch):'';
+}
+$("bog_set").onclick=()=>{const v=parseFloat($("og_input").value);
+ if(isNaN(v)||v<=0)return toast("valore OG non valido");
+ const unit=(ST&&ST.gravity&&ST.gravity.unit)||'sg';
+ if(unit!=='plato'&&(v<1||v>1.2))return toast("OG plausibile 1.000–1.200 (SG)");
+ if(unit==='plato'&&(v<1||v>40))return toast("OG plausibile 1–40 (°P)");
+ post("/api/gravity/og",{og:v}).then(()=>{toast("OG impostata");$("og_input").value='';refresh()}).catch(e=>toast(e.message))};
+$("bog_reset").onclick=()=>post("/api/gravity/og",{og:0})
+ .then(()=>{toast("OG in ricattura automatica");refresh()}).catch(e=>toast(e.message));
+document.querySelectorAll("#ranges button").forEach(b=>b.onclick=()=>{
+ document.querySelectorAll("#ranges button").forEach(x=>x.classList.remove("on"));
+ b.classList.add("on");rangeH=+b.dataset.h;
+ // Il CSV e' un link diretto: non passa da api(), quindi lo scoping per camera va
+ // applicato qui a mano, altrimenti scaricherebbe sempre il registro della camera 1.
+ $("csv").href=chPath("/api/log.csv?hours="+rangeH);loadLog()});
+addEventListener("resize",()=>drawCharts());
+
+// ---- profilo ----
+const TYPES=[["fixed","Temperatura fissa"],["ramp_time","Rampa a tempo"],
+ ["ramp_rate","Rampa °C/ora"],["gravity","Attesa densità"]];
+const GMODES=[["0","densità ≤ soglia"],["1","attenuazione ≥ %"],["2","densità stabile"]];
+// Banda di stabilità di default nell'unità configurata (1 punto SG ≈ 0.2 °P di rumore utile).
+const isPlato=()=>((ST&&ST.gravity&&ST.gravity.unit)==='plato');
+// Un punto SG vale circa 0,25 °P: la derivata di 259-259/SG attorno alle densità
+// di un mosto. Serve un fattore solo, usato sia per le bande sia per i default.
+const SG2P=250;
+const sgToPlato=sg=>Math.round((259-259/sg)*100)/100;
+const defBand=()=>(isPlato()?0.002*SG2P:0.002);
+// Anche la soglia di default va nell'unità configurata: 1.010 letto come 1,01 °Plato
+// sarebbe un cancello che nessuna birra raggiunge, e lo step non avanzerebbe mai.
+const defTarget=()=>(isPlato()?sgToPlato(1.010):1.010);
+// Normalizza uno step da fonte non fidata (file importato): solo numeri/booleani/tipi noti,
+// così nulla di testuale finisce nell'innerHTML dell'editor.
+function normStep(s){s=s||{};return{
+ type:["fixed","ramp_time","ramp_rate","gravity"].indexOf(s.type)>=0?s.type:"fixed",
+ enabled:!!s.enabled,target:+s.target||0,fromCurrent:s.fromCurrent!==false,
+ start:+s.start||18,durationSec:+s.durationSec||0,degPerHour:+s.degPerHour||0.5,
+ gravityTarget:+s.gravityTarget||defTarget(),
+ gravityMode:[0,1,2].indexOf(+s.gravityMode)>=0?+s.gravityMode:0,
+ maxDurationSec:+s.maxDurationSec||0,stableBand:+s.stableBand||defBand(),
+ stableHours:+s.stableHours||48,allowHeat:s.allowHeat!==false,allowCool:s.allowCool!==false}}
+function stepRow(s,i){
+ const d=document.createElement("div");d.className="step";
+ const gm=String(s.gravityMode||0);
+ d.innerHTML='<label class="f">step '+(i+1)+
+  '<span><input type="checkbox" class="s_en"'+(s.enabled?" checked":"")+"> attivo</span></label>"+
+  '<label class="f">tipo<select class="s_ty">'+TYPES.map(t=>'<option value="'+t[0]+'"'+
+   (s.type===t[0]?" selected":"")+">"+t[1]+"</option>").join("")+"</select></label>"+
+  '<label class="f">target °C<input type="number" step="any" class="s_tg" value="'+s.target+'"></label>'+
+  '<label class="f f_dur">durata (h)<input type="number" step="0.5" class="s_du" value="'+
+   (s.durationSec/3600||0)+'"></label>'+
+  '<label class="f f_from">da °C<span><select class="s_fc"><option value="1"'+
+   (s.fromCurrent?" selected":"")+'>temp. attuale</option><option value="0"'+
+   (s.fromCurrent?"":" selected")+'>valore:</option></select>'+
+  '<input type="number" step="any" class="s_st" value="'+s.start+'" style="width:70px"></span></label>'+
+  '<label class="f f_rate">°C/ora<input type="number" step="any" min="0.01" class="s_dr" value="'+(+s.degPerHour).toFixed(3).replace(/0+$/,"").replace(/\.$/,"")+'"></label>'+
+  '<label class="f f_gmode">condizione<select class="s_gm">'+GMODES.map(m=>'<option value="'+m[0]+'"'+
+   (gm===m[0]?" selected":"")+">"+m[1]+"</option>").join("")+"</select></label>"+
+  '<label class="f f_grav"><span class="gtl">densità ≤</span><input type="number" step="0.001" class="s_gt" value="'+s.gravityTarget+'"></label>'+
+  '<label class="f f_stab">stabile per (h)<input type="number" step="1" class="s_sh" value="'+
+   (s.stableHours!==undefined?s.stableHours:48)+'"></label>'+
+  '<label class="f f_stab2">banda ±<input type="number" step="0.001" class="s_sb" value="'+
+   (s.stableBand!==undefined?s.stableBand:defBand())+'"></label>'+
+  '<label class="f f_mx">timeout (g, 0=no)<input type="number" step="0.5" class="s_mx" value="'+
+   ((s.maxDurationSec||0)/86400)+'"></label>'+
+  '<label class="f f_act">attuazione<span>'+
+   '<label><input type="checkbox" class="s_nh"'+(s.allowHeat===false?" checked":"")+'> senza caldo</label> '+
+   '<label><input type="checkbox" class="s_nc"'+(s.allowCool===false?" checked":"")+'> senza freddo</label>'+
+  '</span></label>'+
+  '<button class="b sec s_del">×</button>';
+ const upd=()=>{const ty=d.querySelector(".s_ty").value,g=d.querySelector(".s_gm").value;
+  d.querySelector(".f_dur").style.display=(ty==="fixed"||ty==="ramp_time")?"":"none";
+  d.querySelector(".f_from").style.display=ty==="ramp_time"?"":"none";
+  d.querySelector(".f_rate").style.display=ty==="ramp_rate"?"":"none";
+  d.querySelector(".f_gmode").style.display=ty==="gravity"?"":"none";
+  d.querySelector(".f_grav").style.display=(ty==="gravity"&&g!=="2")?"":"none";
+  d.querySelector(".gtl").textContent=g==="1"?"attenuazione ≥ %":"densità ≤";
+  d.querySelector(".s_gt").step=g==="1"?"1":"0.001";
+  d.querySelector(".f_stab").style.display=(ty==="gravity"&&g==="2")?"":"none";
+  d.querySelector(".f_stab2").style.display=(ty==="gravity"&&g==="2")?"":"none";
+  d.querySelector(".f_mx").style.display=(ty==="gravity"||ty==="ramp_rate")?"":"none"};
+ d.querySelector(".s_ty").onchange=upd;
+ d.querySelector(".s_gm").onchange=upd;upd();
+ d.querySelector(".s_del").onclick=()=>d.remove();
+ return d;
+}
+function collectSteps(){const steps=[];
+ document.querySelectorAll("#steps .step").forEach(d=>{steps.push({
+  type:d.querySelector(".s_ty").value,enabled:d.querySelector(".s_en").checked,
+  target:+d.querySelector(".s_tg").value,
+  fromCurrent:d.querySelector(".s_fc").value==="1",
+  start:+d.querySelector(".s_st").value,
+  durationSec:Math.round(+d.querySelector(".s_du").value*3600),
+  degPerHour:+d.querySelector(".s_dr").value,
+  gravityTarget:+d.querySelector(".s_gt").value,
+  gravityMode:+d.querySelector(".s_gm").value,
+  maxDurationSec:Math.round(+d.querySelector(".s_mx").value*86400),
+  stableBand:+d.querySelector(".s_sb").value,
+  stableHours:+d.querySelector(".s_sh").value,
+  allowHeat:!d.querySelector(".s_nh").checked,
+  allowCool:!d.querySelector(".s_nc").checked})});
+ return steps}
+function describeSteps(steps){
+ const en=(steps||[]).filter(s=>s.enabled);
+ if(!en.length)return"nessuno step attivo";
+ let days=0,grav=false;
+ const parts=en.map(s=>{
+  const act=(s.allowHeat===false?" ∅caldo":"")+(s.allowCool===false?" ∅freddo":"");
+  if(s.type==="fixed"){days+=s.durationSec/86400;
+   return s.target+"° × "+(s.durationSec/86400).toFixed(1)+" g"+act}
+  if(s.type==="ramp_time"){days+=s.durationSec/86400;
+   return"rampa→"+s.target+"° in "+(s.durationSec/86400).toFixed(1)+" g"+act}
+  if(s.type==="ramp_rate")return"rampa "+(+s.degPerHour).toFixed(3).replace(/0+$/,"").replace(/\.$/,"")+" °/h→"+s.target+"°"+act;
+  grav=true;
+  const to=s.gravityMode===1?("att. ≥ "+s.gravityTarget+"%"):
+   s.gravityMode===2?("densità stabile "+(s.stableHours||48)+"h"):("≤ "+s.gravityTarget);
+  const mx=s.maxDurationSec?(" (max "+(s.maxDurationSec/86400).toFixed(1)+" g)"):"";
+  return s.target+"° fino a "+to+mx+act});
+ return parts.join("  →  ")+"   ·  durata min "+days.toFixed(1)+" g"+
+  (grav?" + attese densità":"")}
+function updSummary(){$("profsummary").textContent=describeSteps(collectSteps())}
+// Frase in italiano per uno step: quello che l'editor esprime in campi, detto a parole.
+function stepPhrase(s){
+ const t=(+s.target).toFixed(0)+" °C";
+ const vin=(s.allowHeat===false?" (senza caldo)":"")+(s.allowCool===false?" (senza freddo)":"");
+ if(s.type==="fixed")return"mantiene "+t+" per "+durTxt(s.durationSec)+vin;
+ if(s.type==="ramp_time")return"porta a "+t+" in "+durTxt(s.durationSec)+vin;
+ if(s.type==="ramp_rate")return"porta a "+t+" a "+(+s.degPerHour).toFixed(2).replace(/0$/,"")+" °C/h"+vin;
+ const u=(ST&&ST.gravity&&ST.gravity.unit)==='plato';
+ if(s.gravityMode===1)return"mantiene "+t+" finché l'attenuazione arriva al "+
+  (+s.gravityTarget).toFixed(0)+"%"+vin;
+ if(s.gravityMode===2)return"mantiene "+t+" finché la densità resta ferma per "+
+  (s.stableHours||48)+" h"+vin;
+ return"mantiene "+t+" finché la densità scende a "+
+  (u?(+s.gravityTarget).toFixed(1)+" °P":(+s.gravityTarget).toFixed(3))+vin;
+}
+// Durata nominale di uno step. Per gli step a densità l'unico numero dichiarato è il
+// limite di sicurezza: se manca, la durata è semplicemente IGNOTA (null) e non va
+// contata come zero — altrimenti un'attesa normale sembrerebbe un ritardo.
+function stepNominal(s,curTemp){
+ if(s.type==="fixed"||s.type==="ramp_time")return s.durationSec||0;
+ if(s.type==="ramp_rate"){
+  if(!(s.degPerHour>=0.01))return 0;   // sotto questa soglia il motore chiude subito
+  const from=(curTemp===null||curTemp===undefined)?s.target:curTemp;
+  return Math.abs(s.target-from)/s.degPerHour*3600;
+ }
+ return s.maxDurationSec||null;
+}
+function durTxt(sec){
+ sec=Math.max(0,Math.round(sec));
+ const g=Math.floor(sec/86400),o=Math.floor(sec%86400/3600),m=Math.floor(sec%3600/60);
+ if(g)return g+" g "+o+" h";
+ if(o)return o+" h "+m+" m";
+ return m+" m";
+}
+// Riquadro dello step in corso: cosa sta facendo, cosa lo fa avanzare, cosa viene dopo,
+// e a che punto è il profilo — sia rispetto al piano sia rispetto al tempo trascorso.
+function renderRun(){
+ const box=$("runcard");
+ if(!ST||ST.mode!==2||!RUNPROF||!RUNPROF.steps||!ST.profile){box.innerHTML="";return}
+ const P=ST.profile,now=(ST.time&&ST.time.epoch)||0;
+ if(P.waitingDelayedStart){
+  box.innerHTML='<div class="rc muted">partenza ritardata: il profilo comincerà all\'orario impostato.</div>';
+  return}
+ const en=RUNPROF.steps.filter(s=>s.enabled);
+ // stepEnIdx è l'indice fra gli step ABILITATI (coerente con «step N/M» di
+ // status/OLED/MQTT): indicizza direttamente l'array degli abilitati. stepIdx resta
+ // l'indice assoluto usato altrove per indicizzare RUNPROF.steps.
+ const idx=P.stepEnIdx||0;
+ const cur=en[idx];
+ if(!cur){box.innerHTML="";return}
+ // In pausa il motore congela l'orologio del profilo e trasla gli àncora alla ripresa:
+ // continuare a contare da "adesso" farebbe scorrere barra e conto alla rovescia
+ // mentre in realtà non succede nulla.
+ const ref=(P.paused&&P.pausedAtEpoch)?P.pausedAtEpoch:now;
+ // Solo con una timeline plausibile: se il profilo è partito con orologio non attendibile
+ // (startEpoch fittizio ~100) o now è fittizio, ref-startEpoch darebbe giorni assurdi
+ // (negativi o ~19560). In quei casi trasc=0 (progresso 0, giorno 1): degradazione pulita.
+ const trasc=(ref>1500000000&&P.startEpoch>1500000000&&ref>=P.startEpoch)?(ref-P.startEpoch):0;
+ if(P.completed){
+  box.innerHTML='<div class="rc"><div class="now"><b>Profilo completato</b></div>'+
+   '<div class="muted">durata effettiva '+durTxt(trasc)+
+   ' · il termostato mantiene il setpoint dell\'ultimo step ('+(+cur.target).toFixed(0)+
+   ' °C) finché non fermi il profilo.</div></div>';
+  return}
+ // Durate nominali. Per lo step corrente si parte dalla temperatura reale d'inizio;
+ // per gli altri dal target di quello prima (per il primo, dalla partenza dichiarata).
+ let temp=(en[0].fromCurrent===false)?+en[0].start:en[0].target;
+ let nom=[],tot=0,ignotoAvanti=false;
+ for(let i=0;i<en.length;i++){
+  const d=stepNominal(en[i],i===idx?P.stepStartTemp:temp);
+  nom.push(d);
+  if(d===null){if(i>=idx)ignotoAvanti=true}else tot+=d;
+  temp=en[i].target;
+ }
+ const inStep=(ref&&P.stepStartEpoch)?Math.max(0,ref-P.stepStartEpoch):0;
+ const nomCur=nom[idx];
+ const fatto=nom.slice(0,idx).reduce((a,b)=>a+(b||0),0)+
+  (nomCur===null?0:Math.min(inStep,nomCur));
+ const pReale=tot?Math.min(100,100*fatto/tot):0;
+ const pPiano=tot?Math.min(100,100*trasc/tot):0;
+ let restano=(nomCur===null?0:Math.max(0,nomCur-inStep));
+ for(let i=idx+1;i<en.length;i++)restano+=nom[i]||0;
+ const conDensita=en.slice(idx).some(x=>x.type==="gravity");
+
+ let att=null;
+ if(ST.gravity&&ST.gravity.has&&ST.gravity.og&&ST.gravity.value)
+  att=attenuation(+ST.gravity.og,+ST.gravity.value,ST.gravity.unit);
+
+ // che cosa manca perché lo step avanzi
+ let manca="";
+ if(cur.type==="gravity"){
+  if(!P.hasGravity&&!cur.maxDurationSec)
+   manca='<b style="color:var(--crit)">nessun densimetro e nessun limite di durata: '+
+    'questo step non avanzerà mai</b> — imposta un limite nel profilo oppure usa «Salta step»';
+  else if(!P.hasGravity)
+   manca="nessun densimetro collegato: avanzerà al limite fra "+
+    durTxt(cur.maxDurationSec-inStep);
+  else if(P.waitsGravity)
+   manca='<b style="color:var(--warn)">densità non aggiornata</b>: lo step non avanza '+
+    'finché non arrivano letture fresche';
+  else if(cur.gravityMode===1&&att!==null)
+   manca="attenuazione "+att.toFixed(0)+"% di "+(+cur.gravityTarget).toFixed(0)+"%";
+  else if(cur.gravityMode===0&&ST.gravity.has)
+   manca="densità "+(+ST.gravity.value).toFixed(3)+", serve "+(+cur.gravityTarget).toFixed(3);
+ }else if(P.stepEndsAt&&ref)
+  manca="finisce fra "+durTxt(P.stepEndsAt-ref);
+
+ const succ=en[idx+1];
+ const giorno=trasc?Math.floor(trasc/86400)+1:1;
+ const fine=(now>1500000000&&restano&&!ignotoAvanti)?new Date((now+restano)*1000):null;
+ const rit=trasc-fatto;
+
+ box.innerHTML='<div class="rc">'+
+  (P.paused?'<div class="muted" style="color:var(--warn)">IN PAUSA — i conteggi sono fermi</div>':'')+
+  '<div class="now"><b>Step '+(idx+1)+' di '+en.length+'</b> — '+esc(stepPhrase(cur))+'</div>'+
+  '<div class="muted">in corso da '+durTxt(inStep)+(manca?' · '+manca:'')+'</div>'+
+  (succ?'<div class="next muted">poi: '+esc(stepPhrase(succ))+'</div>':
+        '<div class="next muted">è l\'ultimo step del profilo.</div>')+
+  (tot?'<div class="bar"><i style="width:'+pReale.toFixed(1)+'%"></i>'+
+   '<u style="left:'+Math.min(99.5,pPiano).toFixed(1)+'%" title="dove sarebbe il piano"></u></div>'+
+   '<div class="muted">avanzamento <b>'+pReale.toFixed(0)+'%</b> del piano'+
+   (ignotoAvanti?' <span class="muted">(esclusa l\'attesa densità, di durata non prevedibile)</span>':
+    ' · il piano prevedeva '+pPiano.toFixed(0)+'% · '+
+    (rit<=0?'in linea o in anticipo':'più lento del piano di '+durTxt(rit)))+
+   '</div>':'')+
+  '<div class="muted">giorno '+giorno+' del profilo'+
+   (fine?' · fine stimata '+fine.toLocaleString("it-IT",{day:"2-digit",month:"2-digit",
+     hour:"2-digit",minute:"2-digit"})+(conDensita?' al più tardi':''):
+    (ignotoAvanti?' · fine non prevedibile: dipende da quando arriva la densità':''))+
+   '</div>'+
+  '</div>';
+}
+// Piano futuro del profilo in esecuzione: spezzata di setpoint da stepIdx in poi.
+function planPoints(){
+ if(!ST||ST.mode!==2||!RUNPROF||!RUNPROF.steps)return null;
+ if(!ST.profile.stepStartEpoch||ST.profile.completed||ST.profile.waitingDelayedStart)return null;
+ if(ST.profile.paused)return null;  // in pausa la timeline trasla alla ripresa: piano non attendibile
+ const steps=RUNPROF.steps;
+ let e=ST.profile.stepStartEpoch,cur=ST.profile.stepStartTemp,gravAt=null;
+ const pts=[];
+ for(let i=ST.profile.stepIdx;i<steps.length;i++){
+  const s=steps[i];if(!s.enabled)continue;
+  if(s.type==="fixed"){pts.push({e:e,s:s.target},{e:e+s.durationSec,s:s.target});
+   e+=s.durationSec;cur=s.target}
+  else if(s.type==="ramp_time"){const from=s.fromCurrent?cur:s.start;
+   pts.push({e:e,s:from},{e:e+s.durationSec,s:s.target});e+=s.durationSec;cur=s.target}
+  else if(s.type==="ramp_rate"){
+   const dur=(s.degPerHour>=0.01)?Math.abs(s.target-cur)/s.degPerHour*3600:0;
+   pts.push({e:e,s:cur},{e:e+dur,s:s.target});e+=dur;cur=s.target}
+  else{pts.push({e:e,s:s.target});gravAt=e;break}
+ }
+ return pts.length?{pts:pts,gravAt:gravAt}:null}
+// ---- libreria ----
+async function loadLibrary(){
+ // Se l'elenco non si legge NON si finge una libreria vuota: freeLibId sceglierebbe
+ // l'id 1 e il primo salvataggio scriverebbe sopra un profilo esistente.
+ try{LIB=(await api("/api/profiles")).profiles||[];LIBOK=true}
+ catch(e){LIBOK=false;toast("elenco profili non leggibile: "+e.message)}
+ const opts=LIB.map(p=>'<option value="'+p.id+'">'+esc(p.name)+"</option>").join("");
+ // In Dashboard si avvia solo un profilo salvato: un modello va prima portato
+ // in libreria, altrimenti non esisterebbe nulla da riprendere dopo un riavvio.
+ // Riscrivere le opzioni azzera la selezione: va rimessa, altrimenti chi stava
+ // per avviare un profilo si ritrova su "(profilo attivo corrente)" senza accorgersene.
+ const scelto=$("profsel").value;
+ $("profsel").innerHTML='<option value="0">(profilo attivo corrente)</option>'+opts;
+ if(scelto&&$("profsel").querySelector('option[value="'+scelto+'"]'))$("profsel").value=scelto;
+ // Elenco unico: prima i profili tuoi, poi i modelli raggruppati per famiglia —
+ // di seguito sarebbero una cinquantina di voci indistinguibili.
+ const fam=[];
+ TEMPLATES.forEach((t,i)=>{
+  const g=t.g||"Modelli";
+  let v=fam.find(x=>x.g===g);
+  if(!v){v={g:g,o:""};fam.push(v)}
+  v.o+='<option value="m'+i+'">'+esc(t.n)+'</option>';
+ });
+ $("libsel").innerHTML=
+  (LIB.length?'<optgroup label="I miei profili">'+opts+'</optgroup>':'')+
+  fam.map(v=>'<optgroup label="'+esc(v.g)+'">'+v.o+'</optgroup>').join("");
+ $("libsel").value=TPLID!==null?("m"+TPLID):(LIBID||"");
+ if(NONSALVATO)segnaNonSalvato();
+}
+async function openLib(val){
+ const box=$("steps");
+ const mod=(""+val).charAt(0)==="m"?TEMPLATES[+(""+val).slice(1)]:null;
+ if(mod){
+  // Modello: si mostra com'è, senza poterlo toccare. Diventa modificabile solo
+  // passando da "Modifica…", che ne fa una copia con un nome nuovo.
+  TPLID=+(""+val).slice(1);LIBID=0;
+  $("profname").value=mod.n;
+  box.innerHTML="";
+  mod.s.forEach((st,i)=>box.appendChild(stepRow(TS(st),i)));
+  setReadonly(true,mod.d||"");
+  updSummary();return;
+ }
+ TPLID=null;LIBID=+val||0;NONSALVATO=false;
+ scartaSegnaposto();
+ setReadonly(false,"");
+ // Si svuota PRIMA della richiesta: se fallisse, restare con gli step del profilo
+ // precedente mentre LIBID punta gia' al nuovo significherebbe salvare A sopra B.
+ $("profname").value="";box.innerHTML="";updSummary();
+ if(!LIBID)return;
+ try{const p=await api("/api/profiles/"+LIBID);
+  $("profname").value=p.name||"";
+  box.innerHTML="";
+  (p.steps||[]).forEach((s,i)=>box.appendChild(stepRow(s,i)));
+  updSummary();
+ }catch(e){
+  LIBID=0;$("libsel").value="";
+  toast("impossibile aprire il profilo ("+e.message+"): elenco non aggiornato");
+  }}
+
+// Blocca o sblocca l'editor. Un modello si guarda ma non si modifica: è la
+// garanzia che il riferimento resti sempre disponibile, anche dopo che ci hai
+// costruito sopra dieci varianti.
+function setReadonly(ro,desc){
+ READONLY=ro;
+ $("profdesc").textContent=desc||"";
+ $("profname").disabled=ro;
+ document.querySelectorAll("#steps input,#steps select,#steps button")
+  .forEach(el=>{el.disabled=ro});
+ [["bdupprof",!ro],["bdelprof",!ro],["baddstep",!ro],["bsaveprof",!ro],
+  ["bimport",!ro],["buse",ro],["bedit",ro]].forEach(([id,vis])=>{
+   const el=$(id);if(el)el.style.display=vis?"":"none"});
+}
+// Il firmware misura i nomi in BYTE (String di Arduino), la casella in caratteri.
+const nbyte=s=>new TextEncoder().encode(s).length;
+const tagliaByte=(s,max)=>{let r=s;while(nbyte(r)>max)r=r.slice(0,-1);
+ return r.replace(/[\s,\-(]+$/,"")};
+// Finché la copia non è salvata il menù non deve mostrare il nome del modello da
+// cui deriva: sembrerebbe che stai ancora guardando l'originale.
+function scartaSegnaposto(){
+ const o=$("libsel").querySelector('option[value="__nuovo"]');
+ if(o)o.remove();
+}
+function segnaNonSalvato(){
+ const sel=$("libsel");
+ let o=sel.querySelector('option[value="__nuovo"]');
+ if(!o){o=document.createElement("option");o.value="__nuovo";
+  o.textContent="(profilo non salvato)";o.disabled=true;sel.insertBefore(o,sel.firstChild)}
+ o.disabled=false;sel.value="__nuovo";o.disabled=true;   // selezionabile solo da qui
+}
+function freeLibId(){for(let i=1;i<=20;i++)if(!LIB.some(p=>p.id===i))return i;return 0}
+// ---- galleria modelli (numeri dalle fonti: Brulosophy, BYO, Wyeast, White/Zainasheff,
+//      Fermentis/Lallemand/Omega, BrewPiLess — vedi docs/PROFILI.md) ----
+const DAY=86400;
+const TS=o=>{const r=Object.assign({type:"fixed",enabled:true,target:18,fromCurrent:true,start:18,
+ durationSec:0,degPerHour:0.5,gravityTarget:1.010,gravityMode:0,maxDurationSec:0,
+ stableBand:0.001,stableHours:48,allowHeat:true,allowCool:true},o);
+ // I modelli sono scritti in SG. Con la densità in °Plato vanno convertite DUE cose:
+ // la banda di stabilità (una differenza, fattore SG2P) e la soglia degli step
+ // "densità sotto" (un valore assoluto, formula completa). Convertire solo la prima
+ // lascerebbe cancelli tipo "sotto 1.020" che in °Plato non si chiudono mai.
+ if(isPlato()){
+  r.stableBand=Math.round(r.stableBand*SG2P*1000)/1000;
+  // Solo per gli step "densità sotto" (gravityMode 0) il target è una densità da
+  // convertire. In "attenuazione" (mode 1) è una % e in "stabile" (mode 2) è inutilizzato:
+  // convertirli darebbe soglie assurde (es. att. 50% -> 253,8, cancello che non si chiude).
+  if((r.gravityMode||0)===0&&r.gravityTarget>1.0)r.gravityTarget=sgToPlato(r.gravityTarget);
+ }
+ return r};
+const TEMPLATES=[
+ // --- Ale britanniche e americane ---
+ {n:"APA/IPA dry hop tardivo (US-05)",g:"Ale britanniche e americane",d:"American Pale Ale e IPA pulite: 18 °C in fase tumultuosa, salita controllata a 21 °C, dry hop a densita' finale con finestra anti hop creep e crash a gradini fino a 3 °C.",s:[
+  {target:18,durationSec:3*DAY},
+  {type:"ramp_rate",target:21,degPerHour:0.5},
+  {type:"gravity",target:21,gravityMode:2,stableBand:0.001,stableHours:48,maxDurationSec:7*DAY},
+  {target:20,durationSec:2*DAY},
+  {type:"gravity",target:20,gravityMode:2,stableBand:0.001,stableHours:72,maxDurationSec:5*DAY},
+  {type:"ramp_rate",target:10,degPerHour:0.3,allowHeat:false},
+  {target:10,durationSec:DAY,allowHeat:false},
+  {type:"ramp_time",target:3,durationSec:84000,allowHeat:false},
+  {target:3,durationSec:2*DAY,allowHeat:false}]},
+ {n:"Ale pulita fresca (Nottingham)",g:"Ale britanniche e americane",d:"Ale inglese/americana pulita con Nottingham: primaria fresca a 16 °C fino a meta attenuazione, rialzo controllato a 20 °C per il diacetile, conferma della fine a densita stabile e crash a gradini fino a 3 °C.",s:[
+  {type:"gravity",target:16,gravityMode:1,gravityTarget:50,maxDurationSec:3*DAY},
+  {type:"ramp_rate",target:20,degPerHour:0.3},
+  {type:"gravity",target:20,gravityMode:2,stableBand:0.001,stableHours:48,maxDurationSec:5*DAY},
+  {target:20,durationSec:DAY},
+  {type:"ramp_rate",target:8,degPerHour:0.3,allowHeat:false},
+  {target:8,durationSec:12*3600},
+  {type:"ramp_time",target:3,durationSec:60000,allowHeat:false},
+  {target:3,durationSec:2*DAY,allowHeat:false}]},
+ {n:"ESB inglese (Wyeast 1968)",g:"Ale britanniche e americane",d:"Best Bitter / ESB col ceppo Fuller's: inoculo a 19 °C, salita a 21 °C a meta' fermentazione per gli esteri fruttati, doppio cancello a densita' perche' il 1968 flocca prima di aver finito, poi crash a due gambe.",s:[
+  {type:"gravity",target:19,gravityMode:1,gravityTarget:50,maxDurationSec:3*DAY},
+  {type:"ramp_rate",target:21,degPerHour:0.3},
+  {type:"gravity",target:21,gravityMode:2,stableBand:0.001,stableHours:48,maxDurationSec:6*DAY},
+  {target:21,durationSec:2*DAY},
+  {type:"ramp_rate",target:12,degPerHour:0.5,allowHeat:false},
+  {target:12,durationSec:DAY,allowHeat:false},
+  {type:"ramp_time",target:3,durationSec:18*3600,allowHeat:false},
+  {target:3,durationSec:2*DAY,allowHeat:false}]},
+ {n:"Bitter inglese rapido (S-04)",g:"Ale britanniche e americane",d:"Ale inglesi con S-04 secco: sale a 18 °C fino a meta' attenuazione, chiude a 20 °C, sosta calda dopo la densita' terminale e crash a due gambe con sosta intermedia a 10 °C.",s:[
+  {type:"gravity",target:18,gravityMode:1,gravityTarget:50,maxDurationSec:3*DAY},
+  {type:"ramp_rate",target:20,degPerHour:0.4},
+  {type:"gravity",target:20,gravityMode:2,stableBand:0.002,stableHours:24,maxDurationSec:3*DAY},
+  {target:20,durationSec:DAY},
+  {type:"ramp_rate",target:10,degPerHour:0.5,allowHeat:false},
+  {target:10,durationSec:DAY},
+  {type:"ramp_time",target:3,durationSec:14*3600,allowHeat:false},
+  {target:3,durationSec:2*DAY,allowHeat:false}]},
+ {n:"Amber e Brown USA 1056 + D-rest",g:"Ale britanniche e americane",d:"American Amber e American Brown con lievito americano pulito: fermentazione a 20 °C come da BYO, riposo diacetile a 22 °C innescato dall'attenuazione, dry hop leggero e crash a gradini per un ceppo che flocculante non e'.",s:[
+  {target:20,durationSec:2*DAY},
+  {type:"gravity",target:20,gravityMode:1,gravityTarget:50,maxDurationSec:3*DAY},
+  {type:"ramp_rate",target:22,degPerHour:0.3},
+  {target:22,durationSec:2*DAY},
+  {type:"gravity",target:22,gravityMode:2,stableBand:0.002,stableHours:48,maxDurationSec:7*DAY},
+  {target:20,durationSec:3*DAY},
+  {type:"ramp_rate",target:12,degPerHour:0.5,allowHeat:false},
+  {target:12,durationSec:DAY,allowHeat:false},
+  {type:"ramp_time",target:3,durationSec:18*3600,allowHeat:false},
+  {target:3,durationSec:3*DAY,allowHeat:false}]},
+ {n:"Stout irlandese (Wyeast 1084)",g:"Ale britanniche e americane",d:"Irish Dry Stout stile Guinness: 18 °C fino a meta' fermentazione, poi il rialzo lento di 3 °C prescritto da BYO per abbattere il diacetile, coda calda lunga perche' il 1084 attenua poco, infine crash lento.",s:[
+  {type:"gravity",target:18,gravityMode:1,gravityTarget:50,maxDurationSec:5*DAY},
+  {type:"ramp_rate",target:21,degPerHour:0.2},
+  {type:"gravity",target:21,gravityMode:2,stableBand:0.001,stableHours:48,maxDurationSec:5*DAY},
+  {target:21,durationSec:DAY},
+  {type:"ramp_time",target:2,durationSec:228000,allowHeat:false},
+  {target:2,durationSec:3*DAY,allowHeat:false}]},
+ {n:"Imperial Stout / BW (US-05)",g:"Ale britanniche e americane",d:"Alte densita': inoculo doppio a 18 °C, salita governata a 19 e poi 21 °C guidata dalla densita' per chiudere l'attenuazione, tre giorni caldi di pulizia e crash a due gradini fino a 4 °C. Attenzione: US-05 dichiara 9-11% di tolleranza alcolica, mentre lo stile arriva a 12% — sopra gli 11% servono l'inoculo doppio o un ceppo piu' tollerante. Con OG sopra 1.090 la densita' iniziale e' fuori dall'intervallo calibrato dell'iSpindel: inserire la OG a mano.",s:[
+  {target:18,durationSec:2*DAY},
+  {type:"ramp_rate",target:19,degPerHour:0.1},
+  {type:"gravity",target:19,gravityMode:1,gravityTarget:50,maxDurationSec:5*DAY},
+  {type:"ramp_rate",target:21,degPerHour:0.1},
+  {type:"gravity",target:21,gravityMode:2,stableBand:0.002,stableHours:48,maxDurationSec:10*DAY},
+  {target:21,durationSec:3*DAY},
+  {type:"ramp_rate",target:12,degPerHour:0.5,allowHeat:false},
+  {target:12,durationSec:2*DAY,allowHeat:false},
+  {type:"ramp_time",target:4,durationSec:16*3600,allowHeat:false},
+  {target:4,durationSec:7*DAY,allowHeat:false}]},
+ {n:"American Wheat (Wyeast 1010)",g:"Ale britanniche e americane",d:"American Wheat pulita e asciutta: 20 °C fissi, rialzo finale a 21 °C, finestra anti hop-creep dopo il dry hop e crash fermato a 4 °C per non perdere la velatura dello stile.",s:[
+  {target:20,durationSec:4*DAY},
+  {type:"ramp_rate",target:21,degPerHour:0.3},
+  {type:"gravity",target:21,gravityMode:2,stableBand:0.001,stableHours:48,maxDurationSec:6*DAY},
+  {target:20,durationSec:3*DAY},
+  {type:"gravity",target:20,gravityMode:2,stableBand:0.001,stableHours:24,maxDurationSec:3*DAY},
+  {type:"ramp_time",target:4,durationSec:32*3600,allowHeat:false},
+  {target:4,durationSec:2*DAY,allowHeat:false}]},
+ {n:"Barleywine/RIS cantina (US-05)",g:"Ale britanniche e americane",d:"Coda di una barleywine o imperial stout: chiude l'attenuazione a 21 °C, una settimana di condizionamento caldo, poi tre mesi di cantina a 13 e 11 °C con crash finale opzionale.",s:[
+  {type:"ramp_rate",target:21,degPerHour:0.1},
+  {type:"gravity",target:21,gravityMode:2,stableBand:0.001,stableHours:72,maxDurationSec:14*DAY},
+  {target:21,durationSec:7*DAY},
+  {type:"ramp_rate",target:13,degPerHour:0.25,allowHeat:false},
+  {target:13,durationSec:30*DAY},
+  {target:11,durationSec:60*DAY},
+  {type:"ramp_time",target:4,durationSec:14*3600,allowHeat:false},
+  {target:4,durationSec:3*DAY,allowHeat:false}]},
+ {n:"Ale senza frigo (S-04/US-05)",g:"Ale britanniche e americane",d:"Ale in garage freddo col solo cavo riscaldante e nessun frigo: salita a 18 °C, riposo diacetile a 20 °C dopo il 50% di attenuazione, crash lasciato fare al garage ma con pavimento antigelo a 5 °C.",s:[
+  {type:"ramp_rate",target:18,degPerHour:0.5},
+  {type:"gravity",target:18,gravityMode:1,gravityTarget:50,maxDurationSec:5*DAY,allowCool:false},
+  {type:"ramp_rate",target:20,degPerHour:0.2},
+  {target:20,durationSec:2*DAY,allowCool:false},
+  {type:"gravity",target:20,gravityMode:2,stableBand:0.001,stableHours:48,maxDurationSec:7*DAY,allowCool:false},
+  {target:5,durationSec:5*DAY,allowCool:false}]},
+ // --- Lager e bassa fermentazione ---
+ {n:"Märzen 34/70 lagering lungo",g:"Lager e bassa fermentazione",d:"Märzen/Oktoberfest con lagering lungo: innesto a 10 °C, primaria a 12 °C, diacetyl rest a 18 °C al 50% di attenuazione, poi discesa a 1 °C/giorno e 10 settimane di lagering in due gradini (2 °C poi 0 °C). Circa 86 giorni totali.",s:[
+  {target:10,durationSec:12*3600},
+  {type:"gravity",target:12,gravityMode:1,gravityTarget:50,maxDurationSec:7*DAY},
+  {type:"ramp_rate",target:18,degPerHour:0.23},
+  {type:"gravity",target:18,gravityMode:2,stableBand:0.001,stableHours:24,maxDurationSec:3*DAY},
+  {target:18,durationSec:2*DAY},
+  {type:"ramp_time",target:2,durationSec:1371429,allowHeat:false},
+  {target:2,durationSec:21*DAY,allowHeat:false},
+  {type:"ramp_time",target:0,durationSec:171429,allowHeat:false},
+  {target:0,durationSec:35*DAY,allowHeat:false}]},
+ {n:"Pils Narziss freddo (WLP830)",g:"Lager e bassa fermentazione",d:"Scuola tedesca in versione fredda: innesto e sosta a 7 °C, salita lentissima a 10 °C, cuore a 10 °C fino al 55% di attenuazione, diacetyl rest a 14 °C, poi discesa a gradini 14 → 10 → 5 → 1 °C con soste intermedie per far crescere e sedimentare le particelle, sosta di travaso a 5 °C e lagering lungo 6 settimane.",s:[
+  {target:7,durationSec:2*DAY},
+  {type:"ramp_rate",target:10,degPerHour:0.06},
+  {type:"gravity",target:10,gravityMode:1,gravityTarget:55,maxDurationSec:10*DAY},
+  {type:"ramp_rate",target:14,degPerHour:0.17},
+  {type:"gravity",target:14,gravityMode:2,stableBand:0.001,stableHours:48,maxDurationSec:6*DAY},
+  {type:"ramp_rate",target:10,degPerHour:0.04,allowHeat:false},
+  {target:10,durationSec:DAY,allowHeat:false},
+  {type:"ramp_time",target:5,durationSec:125*3600,allowHeat:false},
+  {target:5,durationSec:2*DAY,allowHeat:false},
+  {type:"ramp_time",target:1,durationSec:50*3600,allowHeat:false},
+  {target:1,durationSec:42*DAY,allowHeat:false}]},
+ {n:"Lager in pressione (34/70)",g:"Lager e bassa fermentazione",d:"Lager a temperatura da ale con valvola spunding chiusa a 13-15 PSI quando mancano 4-8 punti al FG: fermentazione e diacetyl rest chiusi in ~6 giorni, birra pronta in circa due settimane. Il controllore fa SOLO la temperatura: la pressione la imposti e la sorvegli tu.",s:[
+  {target:18,durationSec:12*3600},
+  {type:"gravity",target:20,gravityMode:0,gravityTarget:1.018,maxDurationSec:2*DAY},
+  {target:20,durationSec:2*DAY},
+  {type:"gravity",target:20,gravityMode:2,stableBand:0.001,stableHours:24,maxDurationSec:3*DAY},
+  {target:20,durationSec:DAY},
+  {type:"ramp_time",target:0,durationSec:171429,allowHeat:false},
+  {target:0,durationSec:7*DAY,allowHeat:false}]},
+ {n:"Pilsner ceca lunga (W2124)",g:"Lager e bassa fermentazione",d:"Scuola ceca: innesto freddo a 7 °C, primaria a 9 °C, chiusura e diacetyl rest a 13 °C, discesa a 1 °C al giorno e 8 settimane di lagering a 1 °C.",s:[
+  {target:7,durationSec:12*3600},
+  {type:"ramp_rate",target:9,degPerHour:0.08},
+  {type:"gravity",target:9,gravityMode:1,gravityTarget:50,maxDurationSec:10*DAY},
+  {type:"ramp_rate",target:13,degPerHour:0.08},
+  {type:"gravity",target:13,gravityMode:2,stableBand:0.001,stableHours:48,maxDurationSec:7*DAY},
+  {target:13,durationSec:3*DAY},
+  {type:"ramp_time",target:1,durationSec:1028571,allowHeat:false},
+  {target:1,durationSec:56*DAY,allowHeat:false}]},
+ {n:"Helles S-23 lagering 2 mesi",g:"Lager e bassa fermentazione",d:"Munich Helles o Pils tedesca con S-23 sul calendario di prova Fermentis (12 °C per 48 h, poi 14 °C), diacetyl rest fisso di due giorni a 18 °C e due mesi di lagering a 0 °C: la lager piu' lunga e tradizionale della libreria, 70-81 giorni dall'innesto.",s:[
+  {target:12,durationSec:2*DAY},
+  {type:"gravity",target:14,gravityMode:1,gravityTarget:50,maxDurationSec:8*DAY},
+  {type:"ramp_rate",target:18,degPerHour:0.25},
+  {target:18,durationSec:2*DAY},
+  {type:"gravity",target:18,gravityMode:2,stableBand:0.001,stableHours:48,maxDurationSec:5*DAY},
+  {type:"ramp_time",target:0,durationSec:180*3600,allowHeat:false},
+  {target:0,durationSec:56*DAY,allowHeat:false}]},
+ {n:"Lager scure step crash (WLP830)",g:"Lager e bassa fermentazione",d:"Lager scure e Baltic Porter con WLP830: fermentazione a 11 °C, riposo diacetile a 15 °C e discesa continua di 1 °C al giorno fino a 1 °C per la maturazione.",s:[
+  {target:11,durationSec:12*3600},
+  {type:"gravity",target:11,gravityMode:1,gravityTarget:50,maxDurationSec:14*DAY},
+  {type:"ramp_rate",target:15,degPerHour:0.1},
+  {type:"gravity",target:15,gravityMode:2,stableBand:0.001,stableHours:48,maxDurationSec:10*DAY},
+  {target:15,durationSec:2*DAY},
+  {type:"ramp_time",target:1,durationSec:1200000,allowHeat:false},
+  {target:1,durationSec:56*DAY,allowHeat:false}]},
+ {n:"California Common (Wyeast 2112)",g:"Lager e bassa fermentazione",d:"Steam beer: il 2112 fermenta a 17-18 °C tenendo il carattere lager, poi condizionamento caldo per il VDK e tre settimane a 3 °C per la limpidezza.",s:[
+  {target:17,durationSec:12*3600},
+  {type:"gravity",target:17,gravityMode:1,gravityTarget:50,maxDurationSec:4*DAY},
+  {type:"ramp_rate",target:18,degPerHour:0.1},
+  {type:"gravity",target:18,gravityMode:2,stableBand:0.001,stableHours:48,maxDurationSec:5*DAY},
+  {target:18,durationSec:3*DAY},
+  {type:"ramp_time",target:3,durationSec:50*3600,allowHeat:false},
+  {target:3,durationSec:21*DAY,allowHeat:false}]},
+ {n:"Pseudo-lager Lutra + lagering",g:"Lager e bassa fermentazione",d:"Lutra tenuto basso a 20-23 °C invece che a 32: pseudo-lager per chi ha solo il frigo e non un riscaldatore da 32 °C, con rialzo pilotato dalla densità e 7 giorni di lagering a 2 °C. Circa 12-14 giorni in totale, di cui 4-5 di fermentazione attiva.",s:[
+  {target:20,durationSec:DAY},
+  {type:"gravity",target:20,gravityMode:0,gravityTarget:1.02,maxDurationSec:3*DAY},
+  {type:"ramp_rate",target:23,degPerHour:0.25},
+  {type:"gravity",target:23,gravityMode:2,stableBand:0.002,stableHours:24,maxDurationSec:3*DAY},
+  {type:"ramp_time",target:2,durationSec:42*3600,allowHeat:false},
+  {target:2,durationSec:7*DAY,allowHeat:false}]},
+ {n:"Lagering lungo 2 stadi (W-34/70)",g:"Lager e bassa fermentazione",d:"Coda della primaria a 12 C, riposo diacetile a 18 C, poi maturazione fredda in due stadi (10 giorni a 4 C e 3 settimane a -1 C) con discese lente da 1 C ogni 12 ore.",s:[
+  {type:"gravity",target:12,gravityMode:0,gravityTarget:1.016,maxDurationSec:10*DAY},
+  {type:"ramp_rate",target:18,degPerHour:0.25},
+  {target:18,durationSec:4*DAY},
+  {type:"ramp_time",target:4,durationSec:607229,allowHeat:false},
+  {target:4,durationSec:10*DAY,allowHeat:false},
+  {type:"ramp_time",target:-1,durationSec:216867,allowHeat:false},
+  {target:-1,durationSec:21*DAY,allowHeat:false}]},
+ {n:"Lager rapida (Brulosophy)",g:"Lager e bassa fermentazione",d:"Lager pronta in ~2 settimane: fermentazione a 11°, riposo a 19°, crash diretto. Meno pulita della classica, molto piu veloce.",s:[
+  {type:"gravity",target:11,gravityMode:1,gravityTarget:50,maxDurationSec:8*DAY},
+  {type:"ramp_rate",target:19,degPerHour:0.23},
+  {type:"gravity",target:19,gravityMode:2,stableHours:48,maxDurationSec:10*DAY},
+  {type:"ramp_time",target:0,durationSec:228000,allowHeat:false},
+  {target:0,durationSec:4*DAY,allowHeat:false}]},
+ {n:"W-34/70 calda (ibrida)",g:"Lager e bassa fermentazione",d:"Il lievito lager piu tollerante spinto a 15-18°: profilo quasi-lager senza aspettare un mese.",s:[
+  {type:"gravity",target:15,gravityMode:1,gravityTarget:75,maxDurationSec:8*DAY},
+  {type:"ramp_rate",target:18,degPerHour:0.15},
+  {type:"gravity",target:18,gravityMode:2,stableHours:48,maxDurationSec:6*DAY},
+  {type:"ramp_time",target:2,durationSec:192000,allowHeat:false},
+  {target:2,durationSec:6*DAY,allowHeat:false}]},
+ // --- Belgi, weizen e saison ---
+ {n:"Weizen banana (3068 / WLP300)",g:"Belgi, weizen e saison",d:"Hefeweizen spinta sulla banana: inoculo caldo a 20 °C e salita a 23 °C in piena fase tumultuosa per massimizzare l'isoamil acetato.",s:[
+  {target:20,durationSec:DAY},
+  {type:"ramp_rate",target:23,degPerHour:0.15},
+  {type:"gravity",target:23,gravityMode:1,gravityTarget:60,maxDurationSec:4*DAY},
+  {type:"gravity",target:23,gravityMode:2,stableBand:0.001,stableHours:48,maxDurationSec:5*DAY},
+  {type:"ramp_time",target:3,durationSec:240000,allowHeat:false},
+  {target:3,durationSec:2*DAY,allowHeat:false}]},
+ {n:"Witbier speziata (WLP400/3944)",g:"Belgi, weizen e saison",d:"Sosta a 20 °C per i primi due terzi della fermentazione, cosi da tenere bassi gli esteri e lasciare in primo piano i fenoli speziati, poi salita a 22 °C per chiudere l'attenuazione e asciugare il finale.",s:[
+  {target:20,durationSec:DAY},
+  {type:"gravity",target:20,gravityMode:1,gravityTarget:66,maxDurationSec:4*DAY},
+  {type:"ramp_rate",target:22,degPerHour:0.08},
+  {type:"gravity",target:22,gravityMode:2,stableBand:0.001,stableHours:48,maxDurationSec:5*DAY},
+  {type:"ramp_time",target:3,durationSec:228000,allowHeat:false},
+  {target:3,durationSec:2*DAY,allowHeat:false}]},
+ {n:"Saison 3711 senza freddo 25°",g:"Belgi, weizen e saison",d:"Saison che sale a gradini fino ai 25 °C dichiarati da Wyeast per il 3711 e da li' non raffredda piu' fino a fine fermentazione, con cancello ad attenuazione anti-lag e chiusura su densita' piatta.",s:[
+  {target:20,durationSec:DAY},
+  {target:22,durationSec:12*3600,allowCool:false},
+  {type:"gravity",target:25,gravityMode:1,gravityTarget:70,maxDurationSec:6*DAY,allowCool:false},
+  {type:"gravity",target:25,gravityMode:2,stableBand:0.001,stableHours:72,maxDurationSec:14*DAY},
+  {type:"ramp_time",target:2,durationSec:276000,allowHeat:false},
+  {target:2,durationSec:2*DAY,allowHeat:false}]},
+ {n:"Saison anti-stallo (3724/565)",g:"Belgi, weizen e saison",d:"Per le saison diastaticus che si piantano a 1.035: il calore arriva PRIMA del punto di stallo, non dopo, e i gate densita' usano l'attenuazione dichiarata dal produttore. Servono 32 °C: verifica che il riscaldatore ci arrivi davvero, altrimenti la fermentazione resta piu' fredda del previsto.",s:[
+  {target:21,durationSec:DAY},
+  {type:"ramp_rate",target:26,degPerHour:0.3},
+  {type:"gravity",target:26,gravityMode:0,gravityTarget:1.04,maxDurationSec:36*3600,allowCool:false},
+  {type:"ramp_time",target:32,durationSec:12*3600},
+  {type:"gravity",target:32,gravityMode:1,gravityTarget:70,maxDurationSec:7*DAY,allowCool:false},
+  {type:"gravity",target:32,gravityMode:2,stableBand:0.001,stableHours:48,maxDurationSec:7*DAY,allowCool:false},
+  {type:"ramp_time",target:3,durationSec:29*3600,allowHeat:false},
+  {target:3,durationSec:2*DAY,allowHeat:false}]},
+ {n:"Belga chiara / Blonde (T-58)",g:"Belgi, weizen e saison",d:"Belgian Pale Ale o Blonde con T-58: partenza fresca a 19 °C per domare la banana, poi due rialzi agganciati all'attenuazione fino a 24 °C per il finale pepato-speziato, crash lento e cold conditioning.",s:[
+  {target:19,durationSec:2*DAY},
+  {type:"gravity",target:19,gravityMode:1,gravityTarget:50,maxDurationSec:3*DAY},
+  {type:"ramp_rate",target:22,degPerHour:0.3},
+  {type:"gravity",target:22,gravityMode:1,gravityTarget:65,maxDurationSec:3*DAY},
+  {type:"ramp_rate",target:24,degPerHour:0.3},
+  {type:"gravity",target:24,gravityMode:2,stableBand:0.001,stableHours:48,maxDurationSec:5*DAY},
+  {type:"ramp_time",target:3,durationSec:70*3600,allowHeat:false},
+  {target:3,durationSec:3*DAY,allowHeat:false}]},
+ {n:"Dubbel WLP530 (tetto 22°)",g:"Belgi, weizen e saison",d:"Dubbel con tetto duro a 22 °C, il massimo dichiarato del WLP530: partenza a 19°, rialzo al 50% di attenuazione, conditioning caldo e crash lento adatto alla rifermentazione in bottiglia.",s:[
+  {target:19,durationSec:2*DAY},
+  {type:"gravity",target:19,gravityMode:1,gravityTarget:50,maxDurationSec:5*DAY},
+  {type:"ramp_rate",target:22,degPerHour:0.25},
+  {type:"gravity",target:22,gravityMode:2,stableBand:0.001,stableHours:48,maxDurationSec:8*DAY},
+  {target:22,durationSec:3*DAY},
+  {type:"ramp_time",target:3,durationSec:228000,allowHeat:false},
+  {target:3,durationSec:3*DAY,allowHeat:false}]},
+ {n:"Quad belga a gradini (3787)",g:"Belgi, weizen e saison",d:"Quadrupel in quattro fasi: 18 °C contro gli alcoli superiori, rialzo al 50 % di attenuazione, poi 26 °C e coda lunga fino a densità piatta.",s:[
+  {target:18,durationSec:2*DAY},
+  {type:"gravity",target:18,gravityMode:1,gravityTarget:50,maxDurationSec:2*DAY},
+  {type:"ramp_rate",target:21,degPerHour:0.2},
+  {type:"gravity",target:21,gravityMode:0,gravityTarget:1.03,maxDurationSec:5*DAY},
+  {type:"ramp_rate",target:26,degPerHour:0.25},
+  {type:"gravity",target:26,gravityMode:2,stableBand:0.001,stableHours:72,maxDurationSec:10*DAY},
+  {target:26,durationSec:3*DAY},
+  {type:"ramp_time",target:3,durationSec:276000,allowHeat:false},
+  {target:3,durationSec:4*DAY,allowHeat:false}]},
+ {n:"Saison 3724 + Brett, diastatico",g:"Belgi, weizen e saison",d:"Usa lo stallo a 1.035 del 3724 come trigger, spinge a 32 gradi per sbloccarlo, poi Brett 5112 per 3 mesi con doppia prova di stabilita' prima del confezionamento. Richiede densita' in SG (non Plato) e un riscaldatore capace di 30-32 gradi. Alternativa al 3724: Wyeast 3711 French Saison, anch'esso STA1+, 77-83% a 18-25 gradi, meno incline allo stallo ma senza il punto di rampa netto su cui e' costruito questo profilo.",s:[
+  {target:21,durationSec:DAY},
+  {type:"ramp_rate",target:28,degPerHour:0.3},
+  {type:"gravity",target:28,gravityMode:0,gravityTarget:1.035,maxDurationSec:4*DAY,allowCool:false},
+  {type:"ramp_time",target:32,durationSec:4*3600},
+  {type:"gravity",target:32,gravityMode:1,gravityTarget:75,maxDurationSec:7*DAY},
+  {type:"gravity",target:32,gravityMode:2,stableBand:0.001,stableHours:72,maxDurationSec:7*DAY},
+  {type:"ramp_rate",target:22,degPerHour:1,allowHeat:false},
+  {target:22,durationSec:90*DAY},
+  {type:"gravity",target:22,gravityMode:2,stableBand:0.001,stableHours:168,maxDurationSec:30*DAY},
+  {type:"ramp_time",target:4,durationSec:60*3600,allowHeat:false},
+  {target:4,durationSec:7*DAY,allowHeat:false}]},
+ {n:"Lambic spontaneo 15-21 mesi",g:"Belgi, weizen e saison",d:"Simula due cicli stagionali di cantina belga (inverni a 12 °C, estati a 20 e 19 °C) per un lambic da coolship, e chiude con due finestre da 7 giorni di densita' ferma prima dell'imbottigliamento.",s:[
+  {target:19,durationSec:5*DAY},
+  {type:"ramp_rate",target:12,degPerHour:0.2,allowHeat:false},
+  {target:12,durationSec:90*DAY},
+  {target:16,durationSec:90*DAY},
+  {type:"ramp_rate",target:20,degPerHour:0.15},
+  {target:20,durationSec:90*DAY},
+  {type:"ramp_rate",target:12,degPerHour:0.15,allowHeat:false},
+  {target:12,durationSec:90*DAY},
+  {type:"ramp_rate",target:19,degPerHour:0.15},
+  {target:19,durationSec:90*DAY},
+  {type:"gravity",target:18,gravityMode:2,stableBand:0.001,stableHours:168,maxDurationSec:90*DAY},
+  {type:"gravity",target:18,gravityMode:2,stableBand:0.001,stableHours:168,maxDurationSec:90*DAY}]},
+ {n:"Brett misto veloce, blend Omega",g:"Belgi, weizen e saison",d:"Mista Sacc+Brett in meno di 3 mesi: innesto a 20 gradi, salita a gradini fino al tetto di 27 per chiudere l'attenuazione, poi condizionamento caldo e cancello di stabilita' come ultimo step prima dell'imbottigliamento.",s:[
+  {target:20,durationSec:3*DAY},
+  {type:"ramp_rate",target:24,degPerHour:0.3},
+  {target:24,durationSec:7*DAY},
+  {type:"ramp_rate",target:27,degPerHour:0.3},
+  {type:"gravity",target:27,gravityMode:1,gravityTarget:85,maxDurationSec:21*DAY},
+  {type:"ramp_rate",target:22,degPerHour:0.3},
+  {target:22,durationSec:14*DAY},
+  {type:"gravity",target:22,gravityMode:2,stableBand:0.001,stableHours:168,maxDurationSec:21*DAY}]},
+ {n:"Weizen garofano (banana: +3-4°)",g:"Belgi, weizen e saison",d:"Weizen impostata sul fenolo (garofano). Per la banana alza tutte le temperature di 3-4°.",s:[
+  {type:"gravity",target:17,gravityMode:1,gravityTarget:70,maxDurationSec:6*DAY},
+  {type:"ramp_rate",target:19,degPerHour:0.08},
+  {type:"gravity",target:19,gravityMode:2,stableHours:48,maxDurationSec:5*DAY},
+  {type:"ramp_time",target:2,durationSec:204000,allowHeat:false},
+  {target:2,durationSec:36*3600,allowHeat:false}]},
+ // --- Kveik e lieviti moderni ---
+ {n:"Kveik Voss 35 °C, IPA veloce",g:"Kveik e lieviti moderni",d:"Pale ale o IPA fermentata calda a 35 °C con kveik Voss, che a temperatura alta spinge gli aromi agrumati; fermentazione in 3-4 giorni, poi dry hop e rest anti hop creep prima del crash. Servono 35 °C: verifica che il riscaldatore ci arrivi davvero, altrimenti la fermentazione resta piu' fredda del previsto.",s:[
+  {target:35,durationSec:DAY},
+  {type:"gravity",target:35,gravityMode:2,stableBand:0.002,stableHours:12,maxDurationSec:2*DAY},
+  {type:"ramp_rate",target:20,degPerHour:2,allowHeat:false},
+  {target:20,durationSec:3*DAY},
+  {target:21,durationSec:2*DAY},
+  {type:"ramp_time",target:2,durationSec:34200,allowHeat:false},
+  {target:2,durationSec:2*DAY,allowHeat:false}]},
+ {n:"IPA tropicale Hornindal 33°",g:"Kveik e lieviti moderni",d:"IPA hazy fermentata a 33 °C con Hornindal, poi scesa a 20 °C per dryhoppare nella finestra giusta e trattenuta finche' l'hop creep non e' davvero finito. Servono 33 °C: verifica che il riscaldatore ci arrivi davvero, altrimenti la fermentazione resta piu' fredda del previsto.",s:[
+  {target:33,durationSec:DAY},
+  {type:"gravity",target:33,gravityMode:1,gravityTarget:78,maxDurationSec:2*DAY},
+  {type:"gravity",target:33,gravityMode:2,stableBand:0.002,stableHours:24,maxDurationSec:3*DAY},
+  {type:"ramp_rate",target:20,degPerHour:0.5,allowHeat:false},
+  {target:20,durationSec:3*DAY},
+  {type:"gravity",target:21,gravityMode:2,stableBand:0.002,stableHours:24,maxDurationSec:5*DAY},
+  {type:"ramp_time",target:2,durationSec:228000,allowHeat:false},
+  {target:2,durationSec:2*DAY,allowHeat:false}]},
+ {n:"Farmhouse kveik Framgarden",g:"Kveik e lieviti moderni",d:"Farmhouse/pale ale a 30 °C che spinge il profilo melone-tropicale-agrumi del Framgarden, con doppio controllo densimetrico prima del freddo; ceppo a rilascio limitato (Kveik Ring, luglio 2022), verificarne la reperibilita'. Servono 30 °C: verifica che il riscaldatore ci arrivi davvero, altrimenti la fermentazione resta piu' fredda del previsto.",s:[
+  {target:30,durationSec:DAY},
+  {type:"gravity",target:30,gravityMode:1,gravityTarget:73,maxDurationSec:2*DAY},
+  {type:"gravity",target:30,gravityMode:2,stableBand:0.002,stableHours:12,maxDurationSec:2*DAY},
+  {type:"ramp_rate",target:19,degPerHour:2,allowHeat:false},
+  {target:19,durationSec:3*DAY},
+  {type:"ramp_time",target:3,durationSec:38400,allowHeat:false},
+  {target:3,durationSec:2*DAY,allowHeat:false}]},
+ {n:"NEIPA 2 dry hop - London Ale III",g:"Kveik e lieviti moderni",d:"NEIPA con doppio dry hop: il primo agganciato al 50% di attenuazione reale per la biotrasformazione, il secondo dopo fine fermentazione, con rest anti hop creep prima del crash.",s:[
+  {target:18,durationSec:2*DAY},
+  {type:"gravity",target:19,gravityMode:1,gravityTarget:50,maxDurationSec:3*DAY},
+  {target:20,durationSec:3*DAY},
+  {type:"ramp_rate",target:22,degPerHour:0.5},
+  {type:"gravity",target:22,gravityMode:2,stableBand:0.002,stableHours:12,maxDurationSec:3*DAY},
+  {target:20,durationSec:2*DAY},
+  {target:21,durationSec:2*DAY},
+  {type:"ramp_time",target:2,durationSec:34200,allowHeat:false},
+  {target:2,durationSec:3*DAY,allowHeat:false}]},
+ {n:"Hazy IPA A38 doppio dry hop",g:"Kveik e lieviti moderni",d:"Hazy IPA sul ceppo Imperial A38: salita lenta 19->23 °C con il dry hop in fermentazione attiva per la biotrasformazione, secondo dry hop a 20 °C e crash solo dopo che la densita' conferma che l'hop creep e' finito.",s:[
+  {target:19,durationSec:2*DAY},
+  {type:"gravity",target:19,gravityMode:1,gravityTarget:50,maxDurationSec:4*DAY},
+  {type:"ramp_rate",target:23,degPerHour:0.1},
+  {type:"gravity",target:23,gravityMode:2,stableBand:0.001,stableHours:24,maxDurationSec:4*DAY},
+  {type:"ramp_rate",target:20,degPerHour:0.3},
+  {target:20,durationSec:3*DAY},
+  {type:"ramp_rate",target:22,degPerHour:0.1},
+  {type:"gravity",target:22,gravityMode:2,stableBand:0.001,stableHours:48,maxDurationSec:5*DAY},
+  {type:"ramp_time",target:3,durationSec:228000,allowHeat:false},
+  {target:3,durationSec:3*DAY,allowHeat:false}]},
+ {n:"Hazy tiolizzata Cosmic Punch",g:"Kveik e lieviti moderni",d:"Hazy IPA su lievito tiolizzato Omega: finestra stretta 18-22 gradi rispettata come vincolo duro, dry hop 1 a lievito ancora attivo per liberare i tioli legati, secondo dry hop e finestra anti hop creep governata dalla densita' prima del freddo.",s:[
+  {target:18,durationSec:DAY},
+  {type:"ramp_rate",target:20,degPerHour:0.2},
+  {type:"gravity",target:20,gravityMode:1,gravityTarget:60,maxDurationSec:3*DAY},
+  {target:20,durationSec:3*DAY},
+  {type:"ramp_rate",target:22,degPerHour:0.2},
+  {type:"gravity",target:22,gravityMode:2,stableBand:0.001,stableHours:24,maxDurationSec:4*DAY},
+  {target:20,durationSec:3*DAY},
+  {type:"gravity",target:21,gravityMode:2,stableBand:0.001,stableHours:48,maxDurationSec:4*DAY},
+  {type:"ramp_time",target:2,durationSec:228000,allowHeat:false},
+  {target:2,durationSec:3*DAY,allowHeat:false}]},
+ {n:"Sour saison 35° (Lacto+Belle)",g:"Kveik e lieviti moderni",d:"Acidificazione in fermentatore con Sour Pitch e poi fermentazione con Belle Saison senza mai cambiare temperatura: 35 °C dall'inoculo dei batteri fino al terminale, come da tabella Lallemand. Servono 35 °C: verifica che il riscaldatore ci arrivi davvero, altrimenti la fermentazione resta piu' fredda del previsto.",s:[
+  {target:35,durationSec:DAY},
+  {target:35,durationSec:12*3600},
+  {target:35,durationSec:2*DAY},
+  {type:"gravity",target:35,gravityMode:1,gravityTarget:70,maxDurationSec:4*DAY},
+  {type:"gravity",target:35,gravityMode:2,stableBand:0.001,stableHours:48,maxDurationSec:5*DAY},
+  {type:"ramp_rate",target:20,degPerHour:0.5,allowHeat:false},
+  {target:20,durationSec:3*DAY},
+  {type:"ramp_time",target:2,durationSec:60*3600,allowHeat:false},
+  {target:2,durationSec:3*DAY,allowHeat:false}]},
+ // --- Acide e selvatiche ---
+ {n:"Berliner Sour Pitch + US-05",g:"Acide e selvatiche",d:"Acidificazione in fermentatore a 35 °C con L. plantarum su mosto non luppolato e senza bollitura dopo, poi fermentazione pulita a 20-22 °C e cold crash: la Berliner Weisse rapida che sta tutta in cella. Servono 35 °C: verifica che il riscaldatore ci arrivi davvero, altrimenti la fermentazione resta piu' fredda del previsto.",s:[
+  {target:35,durationSec:36*3600},
+  {type:"ramp_rate",target:20,degPerHour:1,allowHeat:false},
+  {target:20,durationSec:DAY},
+  {type:"gravity",target:20,gravityMode:1,gravityTarget:60,maxDurationSec:3*DAY},
+  {type:"ramp_rate",target:22,degPerHour:0.5},
+  {type:"gravity",target:22,gravityMode:2,stableBand:0.001,stableHours:48,maxDurationSec:4*DAY},
+  {type:"ramp_time",target:3,durationSec:38*3600,allowHeat:false},
+  {target:3,durationSec:3*DAY,allowHeat:false}]},
+ {n:"Gose Helveticus 40° + Wit 22°",g:"Acide e selvatiche",d:"Fermenter souring: acidificazione in fermentatore a 40 °C con L. helveticus, poi lievito Wit a 22 °C e crash. Combinazione e temperature dalla tabella Gose del Best Practices Lallemand. Servono 40 °C: verifica che il riscaldatore ci arrivi davvero, altrimenti la fermentazione resta piu' fredda del previsto.",s:[
+  {target:40,durationSec:36*3600},
+  {type:"ramp_rate",target:22,degPerHour:2,allowHeat:false},
+  {target:22,durationSec:DAY},
+  {type:"gravity",target:22,gravityMode:0,gravityTarget:1.014,maxDurationSec:5*DAY},
+  {type:"gravity",target:22,gravityMode:2,stableBand:0.002,stableHours:36,maxDurationSec:4*DAY},
+  {type:"ramp_time",target:4,durationSec:36*3600,allowHeat:false},
+  {target:4,durationSec:4*DAY,allowHeat:false}]},
+ {n:"Berliner/Gose Philly Sour 25°",g:"Acide e selvatiche",d:"Sour a innesto singolo con Lachancea thermotolerans: acido lattico ed etanolo nello stesso fermentatore, senza batteri e senza kettle souring. Tutta la fermentazione a 25 °C, il tetto dichiarato da Lallemand: piu' caldo si perde acidita'.",s:[
+  {target:25,durationSec:3*DAY},
+  {type:"gravity",target:25,gravityMode:1,gravityTarget:70,maxDurationSec:7*DAY},
+  {type:"gravity",target:25,gravityMode:2,stableBand:0.002,stableHours:36,maxDurationSec:4*DAY},
+  {type:"ramp_time",target:3,durationSec:25*3600,allowHeat:false},
+  {target:3,durationSec:3*DAY,allowHeat:false}]},
+ {n:"Berliner mista Sacc+Lacto+Brett",g:"Acide e selvatiche",d:"Berliner Weisse a fermentazione mista Sacc+Lacto+Brett: primaria 17-20 °C, poi fino a 3 mesi di maturazione in massa chiusa dalla densita', crash lento e imbottigliamento.",s:[
+  {target:17,durationSec:5*DAY},
+  {type:"ramp_rate",target:20,degPerHour:0.3},
+  {type:"gravity",target:20,gravityMode:2,stableBand:0.002,stableHours:72,maxDurationSec:21*DAY},
+  {target:20,durationSec:45*DAY},
+  {type:"gravity",target:18,gravityMode:2,stableBand:0.002,stableHours:168,maxDurationSec:45*DAY},
+  {type:"ramp_time",target:4,durationSec:168000,allowHeat:false},
+  {target:4,durationSec:5*DAY,allowHeat:false}]},
+ {n:"Flanders Red (Roeselare 3763)",g:"Acide e selvatiche",d:"Ciclo Rodenbach in ~14 mesi: 7 giorni alcolici a 21 °C, 5 settimane lattiche a 21 °C, poi ~9 mesi di maturazione a 18 °C chiusi da un cancello a densita' stabile e da un riposo freddo prima del travaso.",s:[
+  {target:21,durationSec:7*DAY},
+  {target:21,durationSec:35*DAY},
+  {type:"ramp_rate",target:18,degPerHour:0.3,allowHeat:false},
+  {target:18,durationSec:90*DAY},
+  {target:18,durationSec:90*DAY},
+  {target:18,durationSec:90*DAY},
+  {type:"gravity",target:18,gravityMode:2,stableBand:0.001,stableHours:168,maxDurationSec:90*DAY},
+  {type:"ramp_rate",target:13,degPerHour:0.5,allowHeat:false},
+  {target:13,durationSec:14*DAY}]},
+ // --- Condizionamento e casi speciali ---
+ {n:"Cold crash graduale ale a 1 °C",g:"Condizionamento e casi speciali",d:"Profilo di sola chiusura per una ale gia' fermentata: conferma che la densita' e' terminale, due giorni di riposo caldo, poi discesa a stadi fino a 1 °C con condizionamento a freddo per chiarificare.",s:[
+  {type:"gravity",target:20,gravityMode:2,stableBand:0.001,stableHours:48,maxDurationSec:5*DAY},
+  {target:20,durationSec:2*DAY},
+  {type:"ramp_time",target:4,durationSec:32*3600,allowHeat:false},
+  {target:4,durationSec:2*DAY,allowHeat:false},
+  {type:"ramp_time",target:1,durationSec:12*3600,allowHeat:false},
+  {target:1,durationSec:5*DAY,allowHeat:false}]},
+ {n:"Rifermentazione bottiglia F-2",g:"Condizionamento e casi speciali",d:"Camera calda per carbonare in bottiglia: due settimane a 21 C, una spinta a 24 C per le birre lente, poi tre settimane di affinamento a 12 C.",s:[
+  {type:"ramp_rate",target:21,degPerHour:1},
+  {target:21,durationSec:14*DAY},
+  {target:24,durationSec:7*DAY},
+  {type:"ramp_rate",target:12,degPerHour:0.5,allowHeat:false},
+  {target:12,durationSec:21*DAY}]},
+ {n:"Riposo diacetile ale (S-04/US-05",g:"Condizionamento e casi speciali",d:"Recupero di una ale che sa di burro: risalita alla temperatura di riposo, sosta calda sul lievito, conferma che la densita' e' ferma e crash controllato solo dopo che il burro e' sparito.",s:[
+  {type:"ramp_rate",target:20,degPerHour:0.5},
+  {target:20,durationSec:2*DAY},
+  {type:"gravity",target:20,gravityMode:2,stableBand:0.002,stableHours:48,maxDurationSec:5*DAY},
+  {target:20,durationSec:2*DAY},
+  {type:"ramp_time",target:2,durationSec:36*3600,allowHeat:false},
+  {target:2,durationSec:3*DAY,allowHeat:false}]},
+ {n:"Sidro secco 71B: 18° poi 1°",g:"Condizionamento e casi speciali",d:"Sidro secco con lievito da vino a 18 °C, cancello di densità doppio (secco E fermo) e tre settimane di freddo per farlo cadere limpido.",s:[
+  {target:18,durationSec:7*DAY},
+  {type:"gravity",target:18,gravityMode:0,gravityTarget:1.005,maxDurationSec:28*DAY},
+  {type:"gravity",target:18,gravityMode:2,stableBand:0.001,stableHours:72,maxDurationSec:7*DAY},
+  {type:"ramp_time",target:4,durationSec:28*3600,allowHeat:false},
+  {target:4,durationSec:7*DAY,allowHeat:false},
+  {type:"ramp_time",target:1,durationSec:12*3600,allowHeat:false},
+  {target:1,durationSec:14*DAY,allowHeat:false}]},
+ {n:"Idromele tradizionale (71B/D-47)",g:"Condizionamento e casi speciali",d:"Idromele tradizionale o melomel: 18 °C fino a densità ferma, affinamento in massa a 12 °C e due settimane a 1 °C per chiarificare. Profilo lungo: nel caso peggiore occupa la cella 137 giorni (~4,5 mesi); lo step da accorciare o spostare fuori cella è l'affinamento a 12 °C.",s:[
+  {target:18,durationSec:14*DAY},
+  {type:"gravity",target:18,gravityMode:2,stableBand:0.001,stableHours:96,maxDurationSec:45*DAY},
+  {type:"ramp_rate",target:12,degPerHour:0.1},
+  {target:12,durationSec:60*DAY},
+  {type:"ramp_time",target:1,durationSec:44*3600,allowHeat:false},
+  {target:1,durationSec:14*DAY,allowHeat:false}]}
+];
+// "Usa modello": ne fa una copia in libreria senza cambiare nulla, pronta da avviare.
+$("buse").onclick=async()=>{
+ if(!LIBOK)return toast("elenco profili non aggiornato: premi Aggiorna");
+ const t=TEMPLATES[TPLID];if(!t)return;
+ const id=freeLibId();if(!id)return toast("libreria piena (max 20 profili)");
+ let nome=t.n;
+ // Il nome viene tagliato a 32 byte dal firmware: se il suffisso « (2)» sforasse,
+ // tornerebbe indietro il nome di prima e si accumulerebbero copie identiche.
+ for(let k=2;LIB.some(p=>p.name.toLowerCase()===nome.toLowerCase());k++)
+  nome=tagliaByte(t.n,32-nbyte(" ("+k+")"))+" ("+k+")";
+ try{await put("/api/profiles/"+id,{name:nome,steps:t.s.map(TS)});
+  DERIVFROM="";await loadLibrary();TPLID=null;LIBID=id;
+  $("libsel").value=id;await openLib(id);
+  toast("«"+nome+"» copiato in libreria: ora puoi avviarlo dalla Dashboard")}
+ catch(e){toast(e.message)}};
+
+// "Modifica…": il modello resta intatto, tu lavori su una copia che DEVE avere
+// un nome nuovo — altrimenti dopo tre varianti non sapresti più qual è l'originale.
+$("bedit").onclick=()=>{
+ if(!LIBOK)return toast("elenco profili non aggiornato: premi Aggiorna");
+ const t=TEMPLATES[TPLID];if(!t)return;
+ const id=freeLibId();if(!id)return toast("libreria piena (max 20 profili)");
+ DERIVFROM=t.n;TPLID=null;LIBID=id;NONSALVATO=true;segnaNonSalvato();
+ setReadonly(false,"");
+ $("profname").value="";$("profname").focus();
+ toast("dai un nome nuovo alla tua versione, poi premi Salva profilo")};
+async function loadProfile(){await loadLibrary();
+ if(TPLID!==null)return;                       // stai guardando un modello: lascialo
+ // Nuovo/Duplica/Modifica assegnano un id che sul dispositivo non esiste ancora:
+ // chiederlo darebbe 404 e cancellerebbe il lavoro non salvato.
+ if(NONSALVATO)return;
+ if(!LIBID&&LIB.length)LIBID=LIB[0].id;
+ // Libreria vuota: si apre il primo modello, così la scheda non è mai bianca.
+ const val=LIBID||"m0";
+ $("libsel").value=val;
+ await openLib(val)}
+$("libsel").onchange=()=>{const v=$("libsel").value;
+ if(v==="__nuovo")return;                    // segnaposto, non un profilo
+ if(NONSALVATO&&!confirm("Il profilo non salvato andrà perso. Continuare?")){
+  segnaNonSalvato();return}                  // torna sulla bozza
+ DERIVFROM="";NONSALVATO=false;scartaSegnaposto();openLib(v)};
+$("bnewprof").onclick=()=>{
+ if(!LIBOK)return toast("elenco profili non aggiornato: premi Aggiorna");
+ const id=freeLibId();
+ if(!id)return toast("libreria piena (max 20 profili)");
+ TPLID=null;DERIVFROM="";setReadonly(false,"");
+ LIBID=id;NONSALVATO=true;segnaNonSalvato();$("profname").value="Nuovo profilo";$("steps").innerHTML="";
+ $("baddstep").click();updSummary();
+ toast("compila e premi Salva per creare il profilo")};
+$("bdupprof").onclick=()=>{
+ if(!LIBOK)return toast("elenco profili non aggiornato: premi Aggiorna");
+ const id=freeLibId();
+ if(!id)return toast("libreria piena (max 20 profili)");
+ if(!$("steps").children.length)return toast("apri prima un profilo da duplicare");
+ LIBID=id;NONSALVATO=true;
+ // " (copia)" pesa 8 byte: senza tagliare la base il nome sfora il limite del
+ // firmware e il salvataggio viene rifiutato proprio sul profilo appena duplicato.
+ $("profname").value=tagliaByte($("profname").value||"Profilo",32-nbyte(" (copia)"))+" (copia)";
+ segnaNonSalvato();
+ toast("premi Salva per creare la copia")};
+$("bdelprof").onclick=async()=>{
+ if(NONSALVATO){
+  // Non esiste sul dispositivo: chiedere di eliminarla e poi ricevere "profilo
+  // inesistente" e' solo un modo per far dubitare l'utente di aver perso qualcosa.
+  if(!confirm("Scartare la bozza non salvata?"))return;
+  NONSALVATO=false;DERIVFROM="";LIBID=0;scartaSegnaposto();
+  toast("bozza scartata");return loadProfile();
+ }
+ if(!LIBID)return;
+ if(!confirm("Eliminare il profilo «"+$("profname").value+"» dalla libreria?"))return;
+ try{await api("/api/profiles/"+LIBID,{method:"DELETE"});LIBID=0;
+  await loadProfile()}catch(e){toast(e.message)}};
+$("baddstep").onclick=()=>{const box=$("steps");
+ if(box.children.length>=12)return toast("massimo 12 step");
+ box.appendChild(stepRow({type:"fixed",enabled:true,target:18,fromCurrent:true,
+  start:18,durationSec:86400,degPerHour:0.5,gravityTarget:defTarget(),gravityMode:0,
+  maxDurationSec:0,stableBand:defBand(),stableHours:48,allowHeat:true,allowCool:true},
+  box.children.length));
+ updSummary()};
+$("bsaveprof").onclick=async()=>{
+ if(!LIBID){LIBID=freeLibId();if(!LIBID)return toast("libreria piena (max 20 profili)")}
+ if(!LIBOK)return toast("elenco profili non aggiornato: premi Aggiorna prima di salvare");
+ const name=$("profname").value.trim();
+ if(!name)return toast("dai un nome al profilo");
+ if(DERIVFROM&&name.toLowerCase()===DERIVFROM.toLowerCase())
+  return toast("la tua versione deve avere un nome diverso da «"+DERIVFROM+"»");
+ if(TEMPLATES.some(t=>t.n.toLowerCase()===name.toLowerCase())&&
+    !LIB.some(p=>p.id===LIBID&&p.name.toLowerCase()===name.toLowerCase()))
+  return toast("«"+name+"» è il nome di un modello di fabbrica: scegline un altro");
+ // Il firmware taglia a 32 BYTE, non a 32 caratteri: «°» e le accentate ne valgono due.
+ if(nbyte(name)>32)return toast("nome troppo lungo: "+nbyte(name)+"/32 byte "+
+  "(le accentate e il simbolo ° ne valgono due)");
+ if(LIB.some(p=>p.id!==LIBID&&p.name.toLowerCase()===name.toLowerCase()))
+  return toast("esiste già un profilo con questo nome");
+ // Un campo numerico VISIBILE lasciato vuoto diventerebbe 0 in silenzio (es. target 0 °C).
+ let emptyField=false;
+ document.querySelectorAll("#steps .step input[type=number]").forEach(inp=>{
+  if(inp.offsetParent!==null&&inp.value==="")emptyField=true});
+ if(emptyField)return toast("compila i campi numerici vuoti degli step");
+ try{await put("/api/profiles/"+LIBID,{name:name,steps:collectSteps()});
+  DERIVFROM="";NONSALVATO=false;toast("profilo «"+name+"» salvato");
+  await loadLibrary();$("libsel").value=LIBID}
+ catch(e){toast(e.message)}};
+$("bexport").onclick=()=>{
+ const name=$("profname").value.trim()||"profilo";
+ const blob=new Blob([JSON.stringify({name:name,steps:collectSteps()},null,1)],
+  {type:"application/json"});
+ const a=document.createElement("a");
+ a.href=URL.createObjectURL(blob);a.download=name.replace(/[^\w\- ]/g,"_")+".json";
+ a.click();URL.revokeObjectURL(a.href)};
+$("bimport").onclick=()=>$("fimport").click();
+$("fimport").onchange=()=>{const f=$("fimport").files[0];if(!f)return;
+ const r=new FileReader();
+ r.onload=()=>{try{const p=JSON.parse(r.result);
+  if(!Array.isArray(p.steps))throw new Error("formato non valido");
+  if(p.name)$("profname").value=tagliaByte(String(p.name),32);
+  const box=$("steps");box.innerHTML="";
+  p.steps.slice(0,12).forEach((s,i)=>box.appendChild(stepRow(normStep(s),i)));
+   if(p.steps.length>12)toast("attenzione: scartati "+(p.steps.length-12)+
+    " step oltre il dodicesimo (limite del firmware)");
+  updSummary();toast("importato: controlla e premi Salva")}
+  catch(e){toast("file non valido: "+e.message)}};
+ r.readAsText(f);$("fimport").value=""};
+$("steps").addEventListener("input",updSummary);
+$("steps").addEventListener("change",updSummary);
+
+// ---- calibrazione densimetro ----
+// Regressione polinomiale ai minimi quadrati risolta con eliminazione di Gauss
+// (pivoting parziale). Gira nel browser: sull'ESP8266 costerebbe flash e RAM per
+// un calcolo che si fa una volta ogni due anni.
+function polyfit(xs,ys,deg){
+ const n=deg+1,A=[],b=[];
+ for(let i=0;i<n;i++){
+  A.push(new Array(n).fill(0));b.push(0);
+  for(let j=0;j<n;j++)for(let k=0;k<xs.length;k++)A[i][j]+=Math.pow(xs[k],i+j);
+  for(let k=0;k<xs.length;k++)b[i]+=ys[k]*Math.pow(xs[k],i);
+ }
+ // Scala della matrice: con angoli ~60 gradi gli elementi arrivano a 1e11, quindi
+ // una soglia ASSOLUTA di singolarita' non scatterebbe mai e un dataset degenere
+ // produrrebbe coefficienti deliranti presentati come validi.
+ let S=0;for(const r of A)for(const v of r)S=Math.max(S,Math.abs(v));
+ for(let c=0;c<n;c++){
+  let piv=c;
+  for(let r=c+1;r<n;r++)if(Math.abs(A[r][c])>Math.abs(A[piv][c]))piv=r;
+  if(Math.abs(A[piv][c])<1e-10*S)return null;
+  [A[c],A[piv]]=[A[piv],A[c]];[b[c],b[piv]]=[b[piv],b[c]];
+  for(let r=0;r<n;r++){
+   if(r===c)continue;
+   const f=A[r][c]/A[c][c];
+   for(let k=c;k<n;k++)A[r][k]-=f*A[c][k];
+   b[r]-=f*b[c];
+  }
+ }
+ const c=b.map((v,i)=>v/A[i][i]);
+ return c.every(v=>isFinite(v))?c:null;
+}
+function polyEval(c,x){return c.reduce((s,v,i)=>s+v*Math.pow(x,i),0)}
+// Correzione di temperatura del densimetro (stessa formula del tool ufficiale iSpindel):
+// un densimetro tarato a 20 °C letto a 30 °C sbaglia di +2.6 punti, più dell'intera
+// tolleranza ammessa. La temperatura la fornisce il DS18B20 a bordo dell'iSpindel.
+function sgTempF(x){return 1.00130346-1.34722124e-4*x+2.04052596e-6*x*x-2.32820948e-9*x*x*x}
+function sgCorr(sg,tC,calC){
+ const tF=tC*9/5+32,cF=calC*9/5+32;
+ return sg*sgTempF(tF)/sgTempF(cF);
+}
+// Notazione accettata dal parser dell'iSpindel: '*' espliciti, '^' per le potenze.
+function polyText(c){
+ return c.map((v,i)=>{
+  const s=v.toExponential(6);
+  return i===0?s:(i===1?s+"*tilt":s+"*tilt^"+i);
+ }).reverse().join(" + ").replace(/\+ -/g,"- ");
+}
+let CALPTS=[],CALUNIT="sg",CALDIP=0,CALTIMER=null,CALTEMP=null;
+function calUnitTxt(){return CALUNIT==="plato"?"°P":"SG"}
+async function calibLoad(){
+ try{
+  const d=await api("/api/calib");
+  CALPTS=d.points||[];CALUNIT=d.unit||"sg";
+  calibDevices(d.devices||[]);
+  const plato=CALUNIT==="plato";
+  $("cal_glabel").textContent="Densità misurata ("+calUnitTxt()+")";
+  $("cal_g").placeholder=plato?"es. 10.5":"es. 1.040";
+  $("cal_g").step=plato?"0.1":"0.001";
+  const L=$("cal_live"),W=$("cal_wait");
+  if(!d.hasReading){
+   L.innerHTML="<b>Nessuna lettura dallo iSpindel.</b> Attendi il primo invio.";W.textContent="";
+  }else{
+   CALTEMP=(d.temp===undefined||d.temp===null)?null:+d.temp;
+   const sec=+d.ageSec||0,min=Math.round(sec/60);
+   let eta=sec<0?"<b style='color:#b23a30'>orologio incoerente</b>":
+    (min<1?"appena ricevuta":min+" min fa");
+   const dev=d.deviceName||("ID "+(d.deviceId||"?"));
+   L.innerHTML="Ultima lettura da <b>"+esc(String(dev))+"</b>: <b>angolo "+d.angle+"°</b> · densità grezza a bordo "+
+    d.gravity+" · "+d.temp+" °C · "+eta+
+    (d.usable?"":" — <b style='color:#b23a30'>non utilizzabile per un punto</b>");
+   // Il punto va registrato con una lettura ARRIVATA DOPO l'immersione, altrimenti
+   // si accoppia la densità di questa soluzione all'angolo della precedente.
+   if(CALDIP){
+    if((+d.readingEpoch||0)>CALDIP){
+     W.innerHTML="<b style='color:#3f8f5b'>Nuova lettura arrivata dopo l'immersione: "+
+      "puoi registrare il punto.</b>";
+     if(CALTIMER){clearInterval(CALTIMER);CALTIMER=null}
+    }else{
+     W.innerHTML="In attesa della prossima trasmissione dello iSpindel (fino a ~15 min "+
+      "dall'immersione)… non registrare ancora: l'angolo è quello di prima.";
+    }
+   }else W.innerHTML="<i>Immergi lo strumento nella soluzione e premi «Ho immerso lo strumento».</i>";
+   if(+d.correction!==0)
+    L.innerHTML+="<br><b>Attenzione:</b> è impostata una correzione densità di "+d.correction+
+     ": riportala a 0 prima di calibrare, altrimenti falsa la verifica.";
+  }
+  calibPreview();
+  calibRender();
+ }catch(e){toast(e.message)}
+}
+// Mostra, prima di registrare, che valore verrà effettivamente salvato.
+function calibPreview(){
+ const el=$("cal_corr"),v=parseFloat($("cal_g").value),cal=parseFloat($("cal_calt").value);
+ if(isNaN(v)||CALUNIT==="plato"||CALTEMP===null||isNaN(cal)){el.textContent="";return}
+ const c=sgCorr(v,CALTEMP,cal),d=(c-v)*1000;
+ el.innerHTML=Math.abs(d)<0.05
+  ?"Soluzione a "+CALTEMP.toFixed(1)+" °C: nessuna correzione necessaria."
+  :"Soluzione a <b>"+CALTEMP.toFixed(1)+" °C</b> (misurata dallo iSpindel): la lettura "+
+   "del densimetro vale in realtà <b>"+c.toFixed(4)+"</b> ("+(d>0?"+":"")+d.toFixed(1)+
+   " punti). Verrà registrato questo valore corretto.";
+}
+$("cal_g").addEventListener("input",calibPreview);
+$("cal_calt").addEventListener("input",calibPreview);
+// Elenco dei densimetri visti dal termostato, l'ultimo ricevuto da /api/calib.
+let DENSLIST=[];
+// Popola le tendine di scelta del densimetro, UNA PER CAMERA (D7), con gli strumenti
+// realmente visti. Rispetta la scelta gia' presente nella tendina: cosi' un aggiornamento
+// di /api/calib mentre l'utente sta modificando le impostazioni non gliela cambia sotto.
+function calibDevices(list){
+ if(list)DENSLIST=list;
+ document.querySelectorAll("select.densSel").forEach(sel=>{
+  const attivo=sel.dataset.attivo||"";
+  const scelto=sel.value||attivo||"";
+  const vuoto=sel.dataset.ch==="0"
+   ?'(qualsiasi: il primo che trasmette)'
+   :'(nessuno: profili a densità non avviabili)';
+  let html='<option value="">'+vuoto+'</option>';
+  const nomi=[];
+  DENSLIST.forEach(d=>{
+   if(!d.name)return;
+   nomi.push(d.name);
+   const eta=d.lastSeen?(" — ultimo invio "+fmtAge(Math.max(0,(ST&&ST.time?ST.time.epoch:0)-d.lastSeen))+" fa"):"";
+   html+='<option value="'+esc(d.name)+'">'+esc(d.name)+esc(eta)+'</option>';
+  });
+  // Se la configurazione punta a uno strumento che non ha ancora trasmesso, va
+  // comunque mostrato: altrimenti salvando le impostazioni si perderebbe la scelta.
+  if(attivo&&!nomi.some(n=>n.toLowerCase()===attivo.toLowerCase()))
+   html+='<option value="'+esc(attivo)+'">'+esc(attivo)+' (non ancora rilevato)</option>';
+  sel.innerHTML=html;
+  sel.value=scelto;
+  if(sel.value!==scelto&&attivo)sel.value=attivo;
+ });
+}
+// Costruisce una riga per camera: densimetro assegnato + sua taratura.
+// A una sola camera l'aspetto e' quello di sempre, senza intestazioni inutili.
+function densRows(cams){
+ const box=$("c_dens");
+ if(!box)return;
+ const n=cams.length;
+ box.innerHTML=cams.map((c,i)=>
+  '<label class="f">Densimetro'+(n>1?" — "+esc(c.label||("Camera "+(i+1))):" per la fermentazione")+
+  '<select class="densSel" id="c_dev_'+i+'" data-ch="'+i+'" data-attivo="'+esc(c.densimetro||"")+'"></select></label>'+
+  '<label class="f">Correzione densità'+(n>1?" — "+esc(c.label||("Camera "+(i+1))):"")+
+  '<input type="number" step="0.001" id="c_corr_'+i+'" value="'+
+  (c.correzione!==undefined&&c.correzione!==null?Number(c.correzione):0)+'"></label>').join("");
+ calibDevices(null);
+}
+function calibRender(){
+ const box=$("cal_pts");
+ if(!CALPTS.length){box.innerHTML='<div class="muted">Nessun punto registrato.</div>';
+  $("cal_out").innerHTML="";return}
+ const dec=CALUNIT==="plato"?2:4;
+ let h='<table class="tbl"><tr><th>#</th><th>densimetro</th><th>angolo</th><th>densità ('+
+  calUnitTxt()+')</th><th>°C</th><th></th></tr>';
+ CALPTS.forEach((p,i)=>{h+='<tr><td>'+(i+1)+'</td><td>'+
+  esc(String(p.deviceName||p.deviceId||"?"))+'</td><td>'+(+p.angle).toFixed(2)+'°</td><td>'+
+  (+p.gravity).toFixed(dec)+'</td><td>'+(+p.temp).toFixed(1)+'</td>'+
+  '<td><button class="b sec cal_del" data-i="'+i+'">×</button></td></tr>'});
+ h+='</table>';box.innerHTML=h;
+ box.querySelectorAll(".cal_del").forEach(b=>b.onclick=async()=>{
+  // Disabilitare tutto: l'indice è posizionale, un doppio click cancellerebbe due punti.
+  box.querySelectorAll(".cal_del").forEach(x=>x.disabled=true);
+  try{await api("/api/calib?idx="+b.dataset.i,{method:"DELETE"})}
+  catch(e){toast(e.message)}
+  finally{calibLoad()}});
+ calibCompute();
+}
+function calibCompute(){
+ const out=$("cal_out");
+ // Ogni densimetro ha la sua geometria: i punti non si possono mescolare.
+ const gruppi={};
+ CALPTS.forEach(p=>{const k=(p.deviceId||0)+"|"+(p.deviceName||"");
+  (gruppi[k]=gruppi[k]||[]).push(p)});
+ const chiavi=Object.keys(gruppi);
+ out.innerHTML=chiavi.map(k=>calibCurva(gruppi[k],k.split("|")[1]||k.split("|")[0],
+  chiavi.length>1)).join("");
+}
+function calibCurva(pts,nome,mostraNome){
+ const xs=pts.map(p=>+p.angle),ys=pts.map(p=>+p.gravity);
+ const plato=CALUNIT==="plato";
+ const testa=mostraNome?'<div style="margin-top:10px"><b>Densimetro '+esc(String(nome))+
+  '</b> — '+pts.length+' punti</div>':'';
+ if(xs.length<3)return testa+'<div class="muted">Servono almeno 3 punti (consigliati 6-7, '+
+  'da acqua fino alla densità più alta che produci).</div>';
+ // Angoli troppo vicini non aggiungono informazione: la regressione degenera.
+ const dist=xs.filter((v,i)=>xs.findIndex(w=>Math.abs(w-v)<0.05)===i).length;
+ let h="",maxDeg=0;
+ if(dist<xs.length)
+  h+='<div class="muted"><b>Attenzione:</b> solo '+dist+' angoli distinti su '+xs.length+
+   ' punti. Punti con lo stesso angolo non aggiungono informazione.</div>';
+ [2,3].forEach(deg=>{
+  if(dist<deg+1)return;
+  const c=polyfit(xs,ys,deg);
+  if(!c){h+='<div class="muted">grado '+deg+': dati insufficientemente distinti</div>';return}
+  maxDeg=deg;
+  const res=xs.map((x,i)=>polyEval(c,x)-ys[i]);
+  const max=Math.max(...res.map(Math.abs));
+  const txt=plato?(max.toFixed(3)+" °P"):((max*1000).toFixed(1)+" punti SG");
+  // In SG e in Plato la stessa qualità: 2 punti SG ≈ 0.5 °P.
+  const ok=plato?max<=0.5:max<=0.002;
+  const esatta=xs.length===deg+1;
+  h+='<div style="margin:8px 0"><b>Grado '+deg+'</b> — '+
+   (esatta?'<b style="color:#b3812a">interpolazione esatta</b>: con soli '+xs.length+
+    ' punti il residuo nullo non dimostra nulla, servono almeno '+(deg+3)+' punti'
+   :'errore massimo <b>'+txt+'</b> '+(ok?'✓':'⚠ oltre la tolleranza'))+
+   '<br><code style="word-break:break-all;font-size:12px">'+esc(polyText(c))+'</code></div>';
+ });
+ const temps=pts.map(p=>+p.temp);
+ const spread=Math.max(...temps)-Math.min(...temps);
+ if(spread>2)
+  h+='<div class="muted"><b>Temperature dei punti diverse di '+spread.toFixed(1)+
+   ' °C.</b> Il densimetro è tarato a 20 °C: applica la correzione di temperatura alle '+
+   'letture, altrimenti l\'errore finisce dentro il polinomio senza comparire nei residui.</div>';
+ h+=maxDeg>=3
+  ?'<div class="muted">Copia il polinomio di <b>grado 3</b> nel campo <i>Polynominal</i> del '+
+   'portale di QUESTO densimetro. Se un solo punto ha un errore molto peggiore degli altri, '+
+   'quella misura è sbagliata: rifalla invece di alzare il grado.</div>'
+  :'<div class="muted">Per il grado 3 servono almeno 4 angoli distinti (meglio 6): '+
+   'aggiungi altri punti.</div>';
+ return testa+h;
+}
+$("cal_refresh").onclick=calibLoad;
+$("cal_dip").onclick=async()=>{
+ try{
+  const d=await api("/api/calib");
+  CALDIP=+d.readingEpoch||0;
+  toast(CALDIP?"attendo la prossima trasmissione":"nessuna lettura: attendo la prima");
+  if(CALTIMER)clearInterval(CALTIMER);
+  CALTIMER=setInterval(calibLoad,30000);   // controlla da solo, senza far attendere l'utente
+  calibLoad();
+ }catch(e){toast(e.message)}};
+$("cal_add").onclick=async()=>{
+ const v=parseFloat($("cal_g").value);
+ if(isNaN(v))return toast("inserisci la densità misurata col densimetro");
+ const cal=parseFloat($("cal_calt").value);
+ // Registriamo la densità riportata a 20 °C: il polinomio deve mappare angolo ->
+ // densità reale, non densità apparente alla temperatura del momento.
+ const g=(CALUNIT!=="plato"&&CALTEMP!==null&&!isNaN(cal))?sgCorr(v,CALTEMP,cal):v;
+ try{await post("/api/calib",{gravity:+g.toFixed(4),afterEpoch:CALDIP});$("cal_g").value="";
+  CALDIP=0;if(CALTIMER){clearInterval(CALTIMER);CALTIMER=null}
+  toast("punto registrato")}
+ catch(e){toast(e.message)}
+ finally{calibLoad()}};
+$("cal_clear").onclick=async()=>{
+ if(!confirm("Cancellare tutti i punti di calibrazione?"))return;
+ try{await api("/api/calib",{method:"DELETE"})}catch(e){toast(e.message)}
+ finally{calibLoad()}};
+
+// ---- impostazioni ----
+const esc=s=>s.replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+$("bscan").onclick=async()=>{
+ const b=$("bscan");b.disabled=true;b.textContent="scansione…";
+ try{
+  let r=await api("/api/wifi/scan");
+  for(let i=0;i<15&&r.scanning;i++){
+   await new Promise(x=>setTimeout(x,1000));r=await api("/api/wifi/scan")}
+  if(r.networks&&r.networks.length){
+   const s=$("c_ssidsel");
+   s.innerHTML='<option value="">— scegli una rete —</option>'+r.networks.map((n,i)=>
+    '<option value="'+i+'">'+esc(n.ssid)+" ("+n.rssi+" dBm"+(n.enc?"":", aperta")+")</option>").join("");
+   s.style.display="";s.dataset.nets=JSON.stringify(r.networks);
+  }else toast("nessuna rete trovata, riprova");
+ }catch(e){toast(e.message)}
+ b.disabled=false;b.textContent="Cerca reti";
+};
+$("c_ssidsel").onchange=()=>{
+ const s=$("c_ssidsel");if(s.value==="")return;
+ const n=JSON.parse(s.dataset.nets)[+s.value];
+ $("c_ssid").value=n.ssid;
+ $("c_wopen").checked=!n.enc;
+};
+async function renderProbes(){
+ let scan=[];
+ try{scan=(await api("/api/diag/onewire")).probes||[]}catch(e){}
+ const pb=$("probecfg");pb.innerHTML="";
+ CFG.probes.forEach((p,i)=>{
+  const d=document.createElement("div");d.className="row";
+  const opts=['<option value="">— non assegnata —</option>'];
+  const seen=new Set();
+  scan.forEach(s=>{seen.add(s.id);
+   opts.push('<option value="'+s.id+'"'+(p.id===s.id?" selected":"")+'>'+s.id+
+    (s.c!==undefined?" · "+s.c+" °C":"")+"</option>")});
+  if(p.id&&!seen.has(p.id))
+   opts.push('<option value="'+esc(p.id)+'" selected>'+esc(p.id)+" (non rilevata!)</option>");
+  // Il RUOLO di una sonda non e' piu' implicito nel suo indice assoluto: appartiene alla
+  // camera. Il firmware assegna alla camera k le sonde [k*3, k*3+1, k*3+2], con la prima
+  // di controllo. A camera singola l'etichetta resta identica a prima, senza prefisso.
+  const nCam=Math.max(1,Math.ceil(CFG.probes.length/3));
+  const cam=Math.floor(i/3)+1,ruolo=i%3;
+  const nome=(ruolo===0?"controllo (mosto)":"ausiliaria "+ruolo)+(nCam>1?" — camera "+cam:"");
+  d.innerHTML='<label class="f">'+nome+
+   '<select class="p_id">'+opts.join("")+"</select></label>"+
+   '<label class="f">offset °C<input type="number" step="any" class="p_of" value="'+p.offset+'"></label>'+
+   '<label class="f">etichetta<input class="p_lb" value="'+esc(p.label)+'" size="9" maxlength="24"></label>';
+  pb.appendChild(d)});
+}
+$("bprobescan").onclick=async()=>{
+ if(!CFG)return;
+ document.querySelectorAll("#probecfg .p_id").forEach((s,i)=>{CFG.probes[i].id=s.value;});
+ document.querySelectorAll("#probecfg .p_of").forEach((s,i)=>{CFG.probes[i].offset=+s.value;});
+ document.querySelectorAll("#probecfg .p_lb").forEach((s,i)=>{CFG.probes[i].label=s.value;});
+ await renderProbes();
+};
+async function loadConfig(){try{
+ const c=await api("/api/config");CFG=c;
+ $("c_ssid").value=c.network.ssid;$("c_dhcp").checked=c.network.dhcp;
+ $("c_ip").value=c.network.ip;$("c_mask").value=c.network.mask;
+ $("c_gw").value=c.network.gw;$("c_dns").value=c.network.dns;
+ $("c_apmin").value=c.network.softApAfterMin;
+ $("c_host").value=c.system.hostname;
+ $("c_ntp").checked=c.time.ntpEnabled;$("c_ntpsrv").value=c.time.ntpServer;
+ $("c_tz").value=c.time.tz;
+ await renderProbes();
+ $("c_pid").checked=c.control.usePid;$("c_pred").checked=c.control.predictive!==false;
+ $("c_tol").value=c.control.tolerance;
+ $("c_kp").value=c.control.kp;$("c_ki").value=c.control.ki;$("c_kd").value=c.control.kd;
+ $("c_win").value=c.control.windowMs;$("c_fpb").value=c.control.fullPowerBelow;
+ $("c_cut").value=c.control.cutAbove;$("c_rest").value=c.control.compressorRestMin;
+ $("c_minon").value=c.control.compressorMinOnSec;$("c_minst").value=c.control.minStateSec;
+ $("c_minsw").value=c.control.minSwitchSec;
+ $("c_stale").value=c.ispindel.staleMin;
+ $("c_batt").value=c.ispindel.batteryAlert;$("c_gunit").value=c.ispindel.unit;
+ $("c_itok").value="";
+ // Una riga per camera. Se la config non porta chambers[] (firmware precedente) si
+ // ricade sui campi singoli di ispindel, che valgono per la camera 1.
+ densRows((c.chambers&&c.chambers.length)?c.chambers
+  :[{label:"",densimetro:c.ispindel.device||"",correzione:c.ispindel.correction||0}]);
+ $("c_oled").checked=c.display.enabled;$("c_odrv").value=c.display.driver;
+ $("c_oaddr").value=c.display.address;$("c_oflip").checked=c.display.flip;
+ $("c_lsm").value=c.log.sampleMin;$("c_lrd").value=c.log.retentionDays;
+ $("c_mq").checked=c.mqtt.enabled;$("c_mqh").value=c.mqtt.host;$("c_mqp").value=c.mqtt.port;
+ $("c_mqu").value=c.mqtt.user;$("c_mqt").value=c.mqtt.baseTopic;
+ $("c_mqha").checked=c.mqtt.haDiscovery;
+ $("c_ota").checked=c.ota.enabled;
+}catch(e){toast(e.message)}}
+$("bsavecfg").onclick=async()=>{
+ const v=id=>$(id).value, n=id=>+$(id).value, k=id=>$(id).checked;
+ const sec=id=>{const s=$(id).value;return s?s:"***"};
+ const probes=[];document.querySelectorAll("#probecfg .row").forEach(d=>probes.push({
+  id:d.querySelector(".p_id").value.trim(),offset:+d.querySelector(".p_of").value,
+  label:d.querySelector(".p_lb").value}));
+ const body={configRev:(CFG&&CFG.configRev)||0,  // locking ottimistico: rifiutato se un altro accesso ha scritto
+  system:{hostname:v("c_host"),uiPassword:sec("c_uipass")},
+  network:{ssid:v("c_ssid"),password:k("c_wopen")?"":sec("c_wpass"),dhcp:k("c_dhcp"),ip:v("c_ip"),
+   mask:v("c_mask"),gw:v("c_gw"),dns:v("c_dns"),softApPassword:sec("c_appass"),
+   softApAfterMin:n("c_apmin")},
+  time:{ntpEnabled:k("c_ntp"),ntpServer:v("c_ntpsrv"),tz:v("c_tz")},
+  probes:probes,
+  control:{usePid:k("c_pid"),predictive:k("c_pred"),tolerance:n("c_tol"),kp:n("c_kp"),ki:n("c_ki"),kd:n("c_kd"),
+   windowMs:n("c_win"),fullPowerBelow:n("c_fpb"),cutAbove:n("c_cut"),
+   compressorRestMin:n("c_rest"),compressorMinOnSec:n("c_minon"),
+   minStateSec:n("c_minst"),minSwitchSec:n("c_minsw")},
+  ispindel:{staleMin:n("c_stale"),batteryAlert:n("c_batt"),
+   unit:v("c_gunit"),token:sec("c_itok")},
+  display:{enabled:k("c_oled"),driver:v("c_odrv"),address:n("c_oaddr"),flip:k("c_oflip")},
+  log:{sampleMin:n("c_lsm"),retentionDays:n("c_lrd")},
+  mqtt:{enabled:k("c_mq"),host:v("c_mqh"),port:n("c_mqp"),user:v("c_mqu"),
+   pass:sec("c_mqpw"),baseTopic:v("c_mqt"),haDiscovery:k("c_mqha")},
+  ota:{enabled:k("c_ota")}};
+ // Densimetro e taratura per camera. Si inviano SOLO se le righe sono state costruite:
+ // un invio con le tendine non popolate cancellerebbe le assegnazioni (il firmware
+ // distingue "chiave assente" da "stringa vuota", e la stringa vuota DISASSEGNA).
+ {const righe=document.querySelectorAll("select.densSel");
+  if(righe.length){
+   body.chambers=[];
+   righe.forEach((sel,i)=>{
+    const c=$("c_corr_"+i);
+    body.chambers.push({densimetro:sel.value.trim(),
+                        correzione:c?Number(c.value)||0:0});
+   });
+  }}
+ try{const r=await put("/api/config",body);
+  if(CFG&&r&&r.configRev!==undefined)CFG.configRev=r.configRev;  // allinea la revisione: niente 409 falso al prossimo salvataggio
+  toast(r.reboot?"Salvato. Il dispositivo si riavvia.":"Salvato.")}
+ catch(e){toast(e.message);
+  // Conflitto di revisione (un altro accesso ha scritto, es. una taratura): ricarico i
+  // valori aggiornati così l'utente non risalva sopra dati vecchi.
+  if(/cambiata|ricarica/i.test(e.message||""))loadConfig();}};
+
+// ---- sistema ----
+function fillRelaySelects(){const opts='<option value="0">nessuno</option>'+
+ [1,2,3,4,5,6,7,8].map(n=>'<option value="'+n+'">REL'+n+"</option>").join("");
+ $("a_cool").innerHTML=opts;$("a_heat").innerHTML=opts;
+ const rb=$("relbtns");rb.innerHTML="";
+ for(let n=1;n<=8;n++){const g=document.createElement("span");
+  g.innerHTML="REL"+n+' <button class="b sec" data-n="'+n+'" data-on="1">ON</button>'+
+  '<button class="b sec" data-n="'+n+'" data-on="0">OFF</button> ';
+  rb.appendChild(g)}
+ rb.querySelectorAll("button").forEach(b=>b.onclick=()=>{
+  post("/api/diag/relay",{n:+b.dataset.n,on:b.dataset.on==="1"})
+   .then(()=>{}).catch(e=>toast(e.message))});
+}
+$("barm").onclick=()=>{const c=+$("a_cool").value,h=+$("a_heat").value;
+ if(!confirm("Armare le uscite?\nFREDDO=REL"+c+"  CALDO=REL"+h+
+  "\nVerifica di aver identificato i relè col test."))return;
+ post("/api/outputs/arm",{cool:c,heat:h}).then(refresh).catch(e=>toast(e.message))};
+$("bdisarm").onclick=()=>post("/api/outputs/disarm").then(refresh).catch(e=>toast(e.message));
+$("btestoff").onclick=()=>post("/api/diag/testmode",{on:false}).catch(e=>toast(e.message));
+// ---- sonde: affidabilità e taratura ----
+let PROBES=[],PROBEARMED=false,PROBEPROF=false;
+// La scelta delle sonde da tarare vive qui, non nel DOM: il pannello si
+// rigenera da solo ogni 15 s e le spunte andrebbero perse.
+const CALSEL=new Set();
+function probeTimerStop(){clearInterval(PROBETIMER);PROBETIMER=0}
+async function probeLoad(){
+ try{
+  const d=await api("/api/probes");
+  PROBES=d.probes||[];PROBEARMED=!!d.armed;PROBEPROF=!!d.profileRunning;
+  const NW=d.avgWindow||12, SP=d.spanMax!==undefined?+d.spanMax:0.2;
+  // La selezione va conservata: il pannello si ricarica da solo ogni 15 s e
+  // rigenerare le caselle despuntate cancellerebbe la scelta mentre si digita
+  // la temperatura di riferimento.
+  const scelte=CALSEL;
+  let h='<table class="tbl"><tr><th>sonda</th><th>ora</th><th>grezzo</th><th>offset</th>'+
+   '<th>letture perse</th><th>episodi</th></tr>';
+  PROBES.forEach(p=>{
+   if(!p.configured){
+    h+='<tr><td>'+esc(p.label||("sonda "+(p.idx+1)))+'</td>'+
+     '<td colspan="5" class="muted" style="text-align:left">non configurata</td></tr>';return}
+   const hasPct=p.badPct!==undefined;
+   const perse=+p.badPct||0;
+   // Si colora sulla MARGINALITÀ, non sulle sole perdite definitive: una sonda che
+   // sbaglia al primo tentativo e si riprende al secondo è comunque una sonda malandata.
+   const marg=p.marginPct!==undefined?+p.marginPct:perse;
+   const col=!hasPct?'var(--muted)':marg>=5?'var(--crit)':marg>=1?'var(--warn)':'inherit';
+   // gli episodi hanno una soglia propria: decine di cadute brevissime possono
+   // lasciare la percentuale bassa e resterebbero altrimenti in colore neutro
+   const fcol=p.faults>=5?'var(--crit)':p.faults>=1?'var(--warn)':'inherit';
+   const w=p.windowSec||0,wo=Math.floor(w/3600),wm=Math.floor((w%3600)/60);
+   h+='<tr><td>'+esc(p.label||("sonda "+(p.idx+1)))+'</td>'+
+    '<td>'+(p.valid?(+p.value).toFixed(2)+' °C':'<b style="color:var(--crit)">non valida</b>')+'</td>'+
+    '<td class="muted">'+(p.valid?(+p.raw).toFixed(2):'—')+'</td>'+
+    '<td>'+((+p.offset)>=0?'+':'')+(+p.offset).toFixed(2)+'</td>'+
+    '<td style="color:'+col+'">'+(hasPct?marg.toFixed(2)+'% <span class="muted">('+
+     (p.firstFail!==undefined?p.firstFail:p.badReads)+'/'+p.reads+' in '+wo+'h '+wm+'m'+
+     (p.recovered?', '+p.recovered+' recuperate al 2° tentativo':'')+')</span>':
+     '<span class="muted">nessun dato</span>')+'</td>'+
+    '<td style="color:'+fcol+'">'+p.faults+
+     (p.lastFaultSecAgo!==undefined?' <span class="muted">('+fmtAge(p.lastFaultSecAgo)+' fa)</span>':'')+
+    '</td></tr>';
+  });
+  h+='</table><div class="muted">ultimo aggiornamento '+new Date().toLocaleTimeString()+'</div>';
+  $("probe_tbl").innerHTML=h;
+  $("probe_err").textContent="";
+  // Storico dei riavvii: un buco nel grafico può essere un blackout, un crash o un
+  // aggiornamento, e finché non si legge il motivo del reset restano indistinguibili.
+  const bt=d.boots||[];
+  if(bt.length){
+   const spia=r=>/watchdog|exception|unknown/i.test(r)?'var(--crit)':
+    /power/i.test(r)?'var(--warn)':'inherit';
+   $("boot_tbl").innerHTML='<div class="muted" style="margin-bottom:4px">Ultimi riavvii</div>'+
+    '<table class="tbl"><tr><th>quando</th><th>motivo</th></tr>'+
+    bt.slice().reverse().map(b=>'<tr><td>'+(b.t?new Date(b.t*1000).toLocaleString():
+     '<span class="muted">ora ignota</span>')+'</td>'+
+     '<td style="color:'+spia(b.r||'')+'">'+esc(b.r||'—')+'</td></tr>').join("")+'</table>'+
+    '<div class="muted">«External System» è il pulsante di reset o il flash, «Power on» un '+
+    'distacco di alimentazione, «Software/System restart» un riavvio richiesto dalla pagina. '+
+    '«Watchdog» o «Exception» indicano invece un blocco del firmware.</div>';
+  }
+  // Caselle NON spuntate alla prima apertura: proporre di tarare anche una sonda
+  // rimasta nel fermentatore sarebbe il default sbagliato.
+  $("cal_sel").innerHTML=PROBES.filter(p=>p.configured).map(p=>{
+   const pronta=p.valid&&p.avgSamples>=NW&&(+p.span)<=SP;
+   const nota=!p.valid?'non valida':p.avgSamples<NW?'raccolgo letture…':
+    (+p.span)>SP?'in movimento ('+(+p.span).toFixed(2)+' °C/min)':
+    'media '+(+p.avgRaw).toFixed(2)+' °C, stabile';
+   const bloccata=p.idx===0&&(PROBEARMED||PROBEPROF);
+   const motivo=bloccata?(PROBEARMED?'disarma le uscite per tararla':'metti in pausa il profilo per tararla'):nota;
+   const attiva=pronta&&!bloccata;
+   const scelta=scelte.has(p.idx);
+   // Una sonda scelta ma momentaneamente non pronta resta spuntata e segnalata:
+   // toglierle la spunta in silenzio farebbe partire una taratura parziale senza
+   // che l'utente se ne accorga.
+   const stile=scelta&&!attiva?' style="color:var(--warn)"':'';
+   return '<label style="margin-right:14px"'+stile+'><input type="checkbox" class="calp" value="'+
+    p.idx+'"'+(attiva||scelta?'':' disabled')+(scelta?' checked':'')+'> '+
+    esc(p.label||("sonda "+(p.idx+1)))+' <span class="muted">('+motivo+')</span></label>';
+  }).join("")||'<span class="muted">nessuna sonda configurata</span>';
+ }catch(e){
+  // Un solo avviso sostituito, non uno aggiunto a ogni tentativo: con il ciclo
+  // automatico ogni 15 s si accumulerebbero quattro banner al minuto.
+  $("probe_err").textContent='dati non aggiornati ('+e.message+'): quelli mostrati '+
+   'potrebbero essere obsoleti.';
+ }
+}
+document.addEventListener("change",e=>{
+ if(!e.target.classList||!e.target.classList.contains("calp"))return;
+ if(e.target.checked)CALSEL.add(+e.target.value);else CALSEL.delete(+e.target.value);
+});
+$("bprobe").onclick=probeLoad;
+$("bprobereset").onclick=async()=>{
+ // Le statistiche vivono in RAM: si azzerano riavviando, oppure ripartendo da qui.
+ const w=Math.max(...PROBES.map(p=>p.windowSec||0),0);
+ if(!confirm("Azzerare i contatori? Si perdono le ultime "+Math.floor(w/3600)+"h "+
+  Math.floor((w%3600)/60)+"m di storico, che non è recuperabile."))return;
+ try{await post("/api/probes/reset");toast("statistiche azzerate")}
+ catch(e){toast(e.message)}
+ finally{probeLoad()}};
+$("bprobecal").onclick=async()=>{
+ const ref=parseFloat($("cal_ref").value);
+ if(isNaN(ref))return toast("inserisci la temperatura di riferimento");
+ const sel=[...document.querySelectorAll(".calp:checked")].map(x=>+x.value);
+ if(!sel.length)return toast("seleziona almeno una sonda pronta");
+ const nomi=sel.map(i=>{const p=PROBES.find(q=>q.idx===i);
+  return (p&&p.label)||("sonda "+(i+1))}).join(", ");
+ if(!confirm("Tarare "+nomi+" assumendo "+ref+" °C?\n\nLe sonde devono essere nel "+
+  "riferimento e in equilibrio termico."))return;
+ try{
+  const r=await post("/api/probes/calibrate",{reference:ref,probes:sel});
+  const fatte=(r&&r.applied||[]);
+  toast(fatte.length?"offset applicati: "+fatte.map(a=>a.label+" "+((+a.offset)>=0?"+":"")+
+   (+a.offset).toFixed(2)).join(", "):"offset applicati");
+  // Aggiornamento in posto invece di invalidare: azzerare CFG lascerebbe i campi
+  // di Impostazioni vuoti a tempo indeterminato se il ricaricamento fallisse.
+  CALSEL.clear();
+  // La taratura ha fatto avanzare configRev lato device: allineo la revisione locale, o il prossimo
+  // "Salva impostazioni" prenderebbe un 409 falso e loadConfig() cancellerebbe le modifiche nel form.
+  if(r&&r.configRev!==undefined&&CFG)CFG.configRev=r.configRev;
+  if(CFG&&CFG.probes){fatte.forEach(a=>{if(CFG.probes[a.idx])CFG.probes[a.idx].offset=+a.offset});
+   const inp=document.querySelectorAll("#probecfg .p_of");
+   fatte.forEach(a=>{if(inp[a.idx])inp[a.idx].value=(+a.offset).toFixed(2)});}
+ }
+ catch(e){toast(e.message)}
+ finally{probeLoad()}};
+
+// Dopo un rilogin il ciclo automatico va riavviato: era stato fermato dal 401.
+document.addEventListener("ax-login",()=>{
+ const b=document.querySelector('nav button.on');
+ if(b&&b.dataset.tab==="sys"&&!PROBETIMER){probeLoad();PROBETIMER=setInterval(probeLoad,15000);}
+});
+// Cold crash su richiesta: sostituisce il piano in corso con una discesa a gradini.
+// Il piano NON viene ricalcolato qui: si chiede al firmware un'anteprima e si mostra
+// quella, così la conferma non può descrivere una discesa diversa da quella eseguita.
+$("bcrash").onclick=async()=>{
+ const t=parseFloat($("cc_t").value),g=parseFloat($("cc_d").value);
+ if(isNaN(t)||isNaN(g))return toast("controlla temperatura e giorni");
+ let p;
+ try{p=await post("/api/profile/coldcrash",{targetC:t,holdDays:g,preview:true})}
+ catch(e){return toast(e.message)}
+ const righe=(p.plan||[]).map(x=>x.type==="ramp"
+  ? " · scende a "+(+x.targetC).toFixed(1)+" °C in "+durTxt(x.sec)
+  : " · resta a "+(+x.targetC).toFixed(1)+" °C per "+durTxt(x.sec)).join("\n");
+ let avvisi="";
+ const P=ST&&ST.profile;
+ if(ST&&ST.mode===2&&P&&!P.completed)
+  avvisi+="\n\nSostituisce il profilo «"+(P.name||"in corso")+"» allo step "+
+   ((P.stepEnIdx||0)+1)+" di "+P.stepEnCount+": quello che resta del piano viene annullato.";
+ if(ST&&ST.gravity&&ST.gravity.has&&ST.gravity.og&&ST.gravity.value){
+  const a=attenuation(+ST.gravity.og,+ST.gravity.value,ST.gravity.unit);
+  if(a!==null&&a<60)avvisi+="\n\nATTENZIONE: attenuazione al "+a.toFixed(0)+
+   "%, la fermentazione sembra ANCORA IN CORSO. Raffreddare adesso la ferma.";
+ }
+ if(!confirm("Cold crash da "+(+p.fromC).toFixed(1)+" °C:\n"+righe+
+  "\n\nTotale "+(p.totalSec/86400).toFixed(1)+" giorni, con il riscaldamento "+
+  "disattivato per tutta la durata."+avvisi+
+  "\n\nNon farlo se la birra deve ancora carbonare in bottiglia, o se è una "+
+  "fermentazione con Brett o batteri, che va tenuta al caldo.\n\nProcedo?"))return;
+ try{const r=await post("/api/profile/coldcrash",{targetC:t,holdDays:g});
+  toast("cold crash avviato: "+((r&&r.totalSec||0)/86400).toFixed(1)+" giorni in tutto");
+  RUNPROF=null;RUNPROFKEY="";refresh()}
+ catch(e){toast(e.message)}};
+$("bi2c").onclick=async()=>{try{const r=await api("/api/diag/i2c");
+ $("scanout").textContent="I2C: "+(r.devices.join("  ")||"nessun dispositivo")}
+ catch(e){toast(e.message)}};
+$("bow").onclick=async()=>{try{const r=await api("/api/diag/onewire");
+ $("scanout").textContent="OneWire: "+(r.probes.map(p=>p.id+(p.c!==undefined?" ("+p.c+" °C)":""))
+  .join("   ")||"nessuna sonda trovata")}
+ catch(e){toast(e.message)}};
+$("bsynctime").onclick=()=>post("/api/time",{epoch:Math.floor(Date.now()/1000)})
+ .then(()=>{toast("ora impostata");refresh()}).catch(e=>toast(e.message));
+$("breboot").onclick=()=>{if(confirm("Riavviare?"))post("/api/reboot").catch(()=>{})};
+$("bfactory").onclick=()=>{if(confirm("RESET DI FABBRICA: cancella configurazione, stato, profilo attivo, l'INTERA libreria profili (fino a 20 ricette), i punti di calibrazione del densimetro e il registro densimetri. Irreversibile. Confermi?"))
+ post("/api/factory_reset").catch(()=>{})};
+$("bupload").onclick=async()=>{const f=$("fwfile").files[0];
+ if(!f)return toast("scegli un file .bin");
+ if(!confirm("Installare "+f.name+"? Non togliere alimentazione durante l'aggiornamento."))return;
+ $("otaout").textContent="caricamento in corso…";
+ const fd=new FormData();fd.append("firmware",f);
+ try{const r=await fetch("/api/update",{method:"POST",body:fd});
+  const j=await r.json();
+  $("otaout").textContent=j.ok?"OK: riavvio in corso, ricarica la pagina tra 20 s":
+   "ERRORE aggiornamento";}
+ catch(e){$("otaout").textContent="errore: "+e.message}};
+
+// ---- avvio ----
+fillRelaySelects();
+refresh();loadLog();loadLibrary();
+setInterval(refresh,2000);
+setInterval(loadLog,60000);
+</script>
+</body>
+</html>

@@ -1,0 +1,6 @@
+{
+  "name": "axcore",
+  "version": "1.0.0",
+  "description": "Motore di controllo AxHTherm: C++ puro, senza dipendenze Arduino, testabile in nativo",
+  "build": { "srcDir": "src" }
+}
