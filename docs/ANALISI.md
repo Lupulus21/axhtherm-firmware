@@ -46,9 +46,9 @@ Legenda confidenza:
 
 | Ingresso ULN | Sorgente | Uscita | Rete | Dove |
 |---|---|---|---|---|
-| I1 | D6 (GPIO12) | O1 | **REL1** | Connettore RELAY pin 1 |
+| I1 | D6 (GPIO12) | O1 | **REL1** | Connettore RELAY pin 1 (rev 1.0); sulla v3 morsetto «REL1» = pin 3 |
 | I2 | D7 (GPIO13) | O2 | **REL2** | Connettore RELAY pin 2 |
-| I3 | D8 (GPIO15) | O3 | **REL3** | Connettore RELAY pin 3 |
+| I3 | D8 (GPIO15) | O3 | **REL3** | Connettore RELAY pin 3 (rev 1.0); sulla v3 morsetto «REL3» = pin 1 |
 | I4–I8 | MCP GP0–GP4 | O4–O8 | REL4–REL8 | P1 pin 9,8,7,6,5 |
 
 Tutto [SCHEMA]. Uscite open-collector verso massa; `CD+` (comune dei diodi di ricircolo) sulla rete `CD` → P1 pin 10: va al +V delle bobine relè. **CD non è un'uscita.**

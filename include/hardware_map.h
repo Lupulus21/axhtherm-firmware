@@ -15,10 +15,16 @@ constexpr uint8_t PIN_ONEWIRE = 0;   // D3 = GPIO0 — strapping: alto al boot g
 // --- Relè su GPIO diretti (schema: ULN I1/I2/I3 <- WD6/WD7/WD8) ---
 // ATTENZIONE: gli stessi pin pilotano i LED (LED2<-D6, LED1<-D7, LED3<-D8):
 // VIETATO ogni blink software — commuterebbe i carichi di potenza.
-constexpr uint8_t PIN_REL1 = 12;     // D6 = GPIO12 -> ULN O1 -> connettore RELAY pin 1
-constexpr uint8_t PIN_REL2 = 13;     // D7 = GPIO13 -> ULN O2 -> connettore RELAY pin 2
-constexpr uint8_t PIN_REL3 = 15;     // D8 = GPIO15 -> ULN O3 -> RELAY pin 3 — strapping: basso al
-                                     // boot garantito dal carico d'ingresso dell'ULN2803
+// Connettore RELAY: tre morsetti con le uscite dell'ULN2803 (open collector: «acceso» = morsetto
+// tirato verso massa). Sulla scheda PCBWay v3 la serigrafia dice, da sinistra, REL3 REL2 REL1
+// (pin 1 = REL3), al contrario della numerazione dello schema rev 1.0. VERIFICATO col tester il
+// 16/11/2026 sulla scheda 1: ogni morsetto risponde solo al suo relè, ~3,95 V fra VCC e il
+// morsetto da acceso, 0 V da spento. Il carico (bobina o SSR) va fra VCC e il morsetto REL.
+constexpr uint8_t PIN_REL1 = 12;     // D6 = GPIO12 -> ULN O1 -> morsetto «REL1» (v3: pin 3)
+constexpr uint8_t PIN_REL2 = 13;     // D7 = GPIO13 -> ULN O2 -> morsetto «REL2» (pin 2)
+constexpr uint8_t PIN_REL3 = 15;     // D8 = GPIO15 -> ULN O3 -> morsetto «REL3» (v3: pin 1) —
+                                     // strapping: basso al boot garantito dal carico d'ingresso
+                                     // dell'ULN2803
 
 // --- MCP23008 (schema: A0/A1/A2 a massa -> 0x20; GP0..GP4 -> ULN I4..I8 -> REL4..REL8 su P1) ---
 constexpr uint8_t I2C_ADDR_MCP23008 = 0x20;  // conferma a runtime con lo scan I2C in diagnostica

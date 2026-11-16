@@ -41,7 +41,11 @@ quelli opto-isolati con `JD-VCC` separato.
 5. **RTC**: `stato` — guarda `trusted`. Se 0: imposta l'ora (`ora <epochUTC>` da seriale,
    o dalla UI "Sincronizza dall'orologio del browser") e verifica che dopo un reset resti `trusted=1`
    (batteria del modulo RTC carica).
-6. **Test relè a vuoto** (si sente/vede il click, o si misura con il tester sul connettore RELAY):
+6. **Test relè a vuoto** (si sente/vede il click, o si misura con il tester sul connettore RELAY).
+   Sulla scheda PCBWay v3 i morsetti sono, da sinistra, **REL3 REL2 REL1** e poi VCC GND PROBE,
+   come dice la serigrafia (verificato il 16/11/2026). Col tester: tensione continua, puntale
+   rosso su VCC e nero sul morsetto REL; acceso ≈ 4 V (con l'USB), spento ≈ 0 V. Ogni morsetto
+   deve rispondere solo al suo relè:
    - `rele 1 1` → click; `rele 1 0` → rilascio. Ripeti per 2 e 3. **Sono queste le uscite
      reali**: al banco (15/08/2026) REL1 → cavo riscaldante, REL3 → frigo (REL2 non cablato).
    - `rele 4`–`8`: escono solo sul pettine P1 e passano dal MCP23008. Senza il chip il
@@ -64,7 +68,7 @@ quelli opto-isolati con `JD-VCC` separato.
 ## Fase B — Identificazione dei carichi (assunzione A1, la sola vera incognita)
 
 10. Con i carichi ANCORA scollegati: dalla pagina Sistema usa il test relè e con un tester in
-    continuità sul connettore RELAY identifica quale REL chiude il circuito del **frigo** e
+    tensione sul connettore RELAY (vedi il punto 6) identifica quale REL comanda il **frigo** e
     quale quello del **cavo riscaldante** (dipende da come è cablato il tuo quadro).
 11. In Sistema → Mapping: seleziona Relè FREDDO e Relè CALDO, **ARMA**.
 
