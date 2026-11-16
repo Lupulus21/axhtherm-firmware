@@ -22,8 +22,7 @@ class OutputBus {
   void attachMcp(Mcp23008* mcp) { mcp_ = mcp; }
 
   // Mapping (camera, funzione) -> relè (1..8, 0 = non assegnato). Configurato da UI
-  // dopo il test manuale. Gli 8 canali fisici sono una risorsa di DISPOSITIVO che le
-  // camere si spartiscono: due camere non possono condividere lo stesso relè.
+  // dopo il test manuale. Il firmware gestisce una sola camera (ch = 0).
   void setMapping(uint8_t ch, uint8_t coolRel, uint8_t heatRel) {
     if (ch >= AX_N_CHAMBERS) return;
     map_[ch].cool = coolRel <= 8 ? coolRel : 0;
@@ -31,19 +30,6 @@ class OutputBus {
   }
   uint8_t coolRel(uint8_t ch) const { return ch < AX_N_CHAMBERS ? map_[ch].cool : 0; }
   uint8_t heatRel(uint8_t ch) const { return ch < AX_N_CHAMBERS ? map_[ch].heat : 0; }
-
-  // Vero se il relè `rel` è già assegnato a una camera DIVERSA da `ch`. Due camere
-  // sullo stesso relè significherebbe che il controllo di una comanda il carico
-  // dell'altra: l'ultima ad attuare nel tick vince e i due regolatori si combattono
-  // sullo stesso attuatore. Va rifiutato all'armamento, non scoperto sul campo.
-  bool relayTakenByOther(uint8_t ch, uint8_t rel) const {
-    if (!rel) return false;
-    for (uint8_t i = 0; i < AX_N_CHAMBERS; i++) {
-      if (i == ch) continue;
-      if (map_[i].cool == rel || map_[i].heat == rel) return true;
-    }
-    return false;
-  }
 
   // Applica l'esito della pipeline di UNA camera. In modalità test è un no-op.
   void applyAutomation(uint8_t ch, bool heat, bool cool) {
@@ -54,19 +40,49 @@ class OutputBus {
     map_[ch].coolOn = cool && map_[ch].cool;
   }
 
+  // Ventola (3.17.0): rele' 1..8, 0 = nessuna. Chi chiama garantisce che non coincida con
+  // caldo o freddo; qui si rifiuta comunque, per difesa. Cambiando rele' il vecchio si spegne.
+  void setFan(uint8_t ch, uint8_t rel) {
+    if (ch >= AX_N_CHAMBERS) return;
+    if (rel > 8 || (rel && (rel == map_[ch].cool || rel == map_[ch].heat))) rel = 0;
+    if (rel == map_[ch].fan) return;
+    if (map_[ch].fan && !testMode_ && map_[ch].fan != map_[ch].cool && map_[ch].fan != map_[ch].heat)
+      writeRel(map_[ch].fan, false);
+    map_[ch].fan = rel;
+    map_[ch].fanOn = false;
+  }
+  uint8_t fanRel(uint8_t ch) const { return ch < AX_N_CHAMBERS ? map_[ch].fan : 0; }
+  void applyFan(uint8_t ch, bool on) {
+    if (testMode_ || ch >= AX_N_CHAMBERS || !map_[ch].fan) return;
+    if (on != map_[ch].fanOn || on != relayState(map_[ch].fan)) writeRel(map_[ch].fan, on);
+    map_[ch].fanOn = on;
+  }
+  bool fanActive(uint8_t ch) const { return ch < AX_N_CHAMBERS && map_[ch].fanOn; }
+
   // Stato sicuro di DISPOSITIVO: spegne tutti gli 8 canali, di tutte le camere.
   void allOff() {
     for (uint8_t r = 1; r <= 8; r++) writeRel(r, false);
-    for (uint8_t i = 0; i < AX_N_CHAMBERS; i++) map_[i].heatOn = map_[i].coolOn = false;
+    for (uint8_t i = 0; i < AX_N_CHAMBERS; i++) map_[i].heatOn = map_[i].coolOn = map_[i].fanOn = false;
   }
 
-  // Spegne le sole uscite di UNA camera, lasciando intatte quelle delle altre: un
-  // disarmo o un guasto su una camera non deve fermare la cotta dell'altra.
+  // Spegne SOLO il caldo della camera (inizio di un upload OTA, SF-14, 3.14.0). Il freddo
+  // resta com'e': spegnerlo senza risincronizzare la guardia del compressore darebbe un
+  // corto ciclo se l'OTA si interrompe (vedi WebApi::handleUpdateUpload). Il caldo non ha
+  // guardia: se l'OTA fallisce, il primo tick lo riaccende se serve.
+  void heatOff(uint8_t ch) {
+    if (testMode_ || ch >= AX_N_CHAMBERS || !map_[ch].heat) return;
+    writeRel(map_[ch].heat, false);
+    map_[ch].heatOn = false;
+  }
+
+  // Spegne le sole uscite mappate della camera (non i canali lasciati eccitati da un
+  // test manuale: per quelli c'è allOff()).
   void chamberOff(uint8_t ch) {
     if (ch >= AX_N_CHAMBERS) return;
     if (map_[ch].heat) writeRel(map_[ch].heat, false);
     if (map_[ch].cool) writeRel(map_[ch].cool, false);
-    map_[ch].heatOn = map_[ch].coolOn = false;
+    if (map_[ch].fan) writeRel(map_[ch].fan, false);
+    map_[ch].heatOn = map_[ch].coolOn = map_[ch].fanOn = false;
   }
 
   // --- Modalità test manuale (pagina diagnostica / seriale) ---
@@ -95,10 +111,9 @@ class OutputBus {
     }
   }
 
-  // Vero se il driver I2C delle uscite è in errore; rilevante solo per le camere il
-  // cui mapping usa REL4..8 (mcpNeeded). Con più camere il guasto del MCP deve
-  // togliere il consenso SOLO a chi dipende davvero da lui: se la camera 1 sta sui
-  // GPIO diretti, un I2C morto non deve fermare la sua cotta.
+  // Vero se il driver I2C delle uscite è in errore; rilevante solo se il mapping usa
+  // REL4..8 (mcpNeeded): con caldo e freddo sui GPIO diretti un I2C morto non deve
+  // fermare la cotta.
   bool mcpFault() const { return mcp_ && !mcp_->present(); }
   bool mcpNeeded(uint8_t ch) const {
     return ch < AX_N_CHAMBERS && (map_[ch].cool >= 4 || map_[ch].heat >= 4);
@@ -136,7 +151,9 @@ class OutputBus {
   // i canali sono del dispositivo, l'assegnazione è della camera.
   struct ChMap {
     uint8_t cool = 0, heat = 0;   // 1..8, 0 = non assegnato
-    bool coolOn = false, heatOn = false;
+    uint8_t fan = 0;              // ventola (3.17.0); fuori da mcpNeeded: un guasto dell'MCP
+                                  // sul rele' della ventola non deve fermare la cotta
+    bool coolOn = false, heatOn = false, fanOn = false;
   };
   Mcp23008* mcp_ = nullptr;
   ChMap map_[AX_N_CHAMBERS];

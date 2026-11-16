@@ -4,11 +4,17 @@
 
 namespace ax {
 
-// Macchina a stati del profilo di fermentazione (fino a 5 step, 4 tipi).
+// Macchina a stati del profilo di fermentazione (fino a kMaxSteps = 12 step, 4 tipi).
 // Tutto il tempo è in epoch UTC assoluti: la ripresa dopo un riavvio è un semplice
 // restore dello snapshot, e le rampe a tempo ripartono dalla posizione corrente.
 class ProfileEngine {
  public:
+  // "Attendi il target": attesa massima prima di far partire comunque il tempo dello step.
+  static constexpr int64_t kWaitMaxSec = 24 * 3600;
+  // Ripresa dopo un'interruzione: uno step scaduto da piu' di cosi' e' scaduto mentre il
+  // controllo era spento (blackout, scheda ferma), non in un tick normale.
+  static constexpr int64_t kResumeGapSec = 600;
+
   struct TickInput {
     uint32_t nowEpoch = 0;
     float tempC = 0.0f;
@@ -20,12 +26,9 @@ class ProfileEngine {
     // SG/°P e dall'OG catturata): il motore la confronta e basta.
     float attenuationPct = 0.0f;
     bool attenuationValid = false;
-    // La camera NON HA una sorgente di densità (nessun densimetro assegnato): è
-    // diverso da "assegnato ma muto". Disabilita la scorciatoia del timeout sugli
-    // step Gravity, che altrimenti li farebbe avanzare senza aver MAI misurato
-    // nulla. Il timeout resta attivo quando una sorgente c'è ed è ferma: quello è
-    // il caso per cui era stato pensato.
-    bool gravitySourceMissing = false;
+    // Istante della lettura di densita' (3.16.0): distingue una lettura NUOVA dalla stessa
+    // ripetuta a ogni tick. 0 = non noto (ogni tick conta come lettura nuova).
+    uint32_t gravityEpoch = 0;
   };
 
   struct TickOutput {
@@ -39,9 +42,13 @@ class ProfileEngine {
     // temperatura misurata non entra in tolleranza — l'impianto non ci arriva.
     // Senza timeout il profilo resterebbe appeso per sempre: va reso VISIBILE.
     bool waitingRampStall = false;
+    // Step "attendi il target": il mosto non e' ancora arrivato, il tempo non conta.
+    bool waitingTarget = false;
     // Politica di attuazione dello step corrente (sempre true fuori dal profilo).
     bool allowHeat = true;
     bool allowCool = true;
+    // Step finito che aspetta la conferma dell'utente (StepDef::confirm).
+    bool waitingConfirm = false;
   };
 
   void configure(float toleranceC) { tol_ = toleranceC < 0.1f ? 0.1f : toleranceC; }
@@ -56,6 +63,12 @@ class ProfileEngine {
   void pause(uint32_t now);
   void resume(uint32_t now);
   bool skip(uint32_t now, float tempC, bool tempValid);
+  // Conferma dell'utente su uno step che la aspetta: si passa al successivo (o a fine
+  // profilo). False se non c'era nulla da confermare.
+  bool confirm(uint32_t now, float tempC, bool tempValid);
+  bool waitingConfirm() const {
+    return s_.mode == RunMode::Profile && !s_.completed && s_.waitingConfirm;
+  }
   void setThermostat(bool on, float setpointC);
   void overrideSetpoint(float setpointC);
   void clearOverride() { s_.overrideActive = false; }
@@ -132,6 +145,10 @@ class ProfileEngine {
   uint8_t count_ = 0;
   float tol_ = 0.5f;
   EngineSnapshot s_;
+  // "Densita' stabile": letture fuori banda di fila non ancora confermate (3.16.0). Non
+  // persistite: dopo un riavvio si riparte da zero, al massimo una lettura in piu'.
+  uint8_t stableOut_ = 0;
+  uint32_t stableLastReading_ = 0;
 };
 
 }  // namespace ax

@@ -24,9 +24,15 @@ class DeviceRegistry {
   // significativo (strumento nuovo): solo allora vale la pena scrivere su flash.
   bool seen(const String& name, uint32_t id, uint32_t epoch) {
     for (uint8_t i = 0; i < n_; i++) {
-      if (devs_[i].id == id || (name.length() && name.equalsIgnoreCase(devs_[i].name))) {
+      // ID 0 = sorgente senza ID (per esempio il Tilt inoltrato da Home Assistant): si
+      // riconosce solo dal nome. Confrontare l'ID fondeva due sorgenti senza ID in una
+      // voce sola, il cui nome veniva sovrascritto a ogni lettura.
+      const bool stessoId = id != 0 && devs_[i].id == id;
+      const bool stessoNome = name.length() ? name.equalsIgnoreCase(devs_[i].name)
+                                            : (id == 0 && devs_[i].id == 0 && !devs_[i].name[0]);
+      if (stessoId || stessoNome) {
         devs_[i].lastSeen = epoch;
-        devs_[i].id = id;
+        if (id) devs_[i].id = id;  // un invio senza ID non cancella quello noto
         if (name.length()) strlcpy(devs_[i].name, name.c_str(), sizeof(devs_[i].name));
         return false;  // già noto: nessuna scrittura
       }

@@ -15,12 +15,6 @@ class CompressorGuard {
   };
 
   void configure(uint32_t restSec, uint32_t minOnSec) { restSec_ = restSec; minOnSec_ = minOnSec; }
-
-  // Sfasamento per camera dell'istante di avvio consentito. ALLUNGA il riposo, non lo
-  // accorcia mai: e' strettamente conservativo e non puo' indebolire la protezione.
-  // Serve a impedire che i compressori di due camere diventino avviabili nello stesso
-  // secondo (dopo un blackout partono tutti dallo stesso epoch di riferimento).
-  void setStartStagger(uint32_t sec) { staggerSec_ = sec; }
   void restore(const Persist& p, bool wasRunning) { st_ = p; on_ = wasRunning; }
   Persist persist() const { return st_; }
 
@@ -34,7 +28,7 @@ class CompressorGuard {
   bool isOn() const { return on_; }
 
   bool canStart(uint32_t now) const {
-    const int64_t req = (int64_t)restSec_ + (int64_t)staggerSec_;
+    const int64_t req = (int64_t)restSec_;
     return elapsed(now, st_.lastOffEpoch) >= req &&
            elapsed(now, st_.lastOnEpoch) >= req;
   }
@@ -65,7 +59,7 @@ class CompressorGuard {
   uint32_t restSec() const { return restSec_; }
   // Secondi mancanti al prossimo avvio consentito (0 = subito).
   uint32_t blockedForSec(uint32_t now) const {
-    const int64_t req = (int64_t)restSec_ + (int64_t)staggerSec_;
+    const int64_t req = (int64_t)restSec_;
     int64_t a = req - elapsed(now, st_.lastOffEpoch);
     int64_t b = req - elapsed(now, st_.lastOnEpoch);
     int64_t m = a > b ? a : b;
@@ -79,7 +73,6 @@ class CompressorGuard {
   }
   uint32_t restSec_ = 300;
   uint32_t minOnSec_ = 60;
-  uint32_t staggerSec_ = 0;  // 0 = nessuno sfasamento (camera 0 / camera singola)
   Persist st_;
   bool on_ = false;
 };

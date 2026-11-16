@@ -25,21 +25,48 @@ Dalla web UI del termostato → **Impostazioni → MQTT / Home Assistant**:
 | Broker | l'IP di Home Assistant (es. `192.168.1.x`) |
 | Porta | `1883` |
 | Utente / Password | quelli del broker MQTT |
-| Topic base | `axhtherm` (lascia così) |
+| Topic base | lascia il valore proposto: `axhtherm-XXXX` (chip ID) sulle schede configurate dalla 3.4.0, così due schede non si sovrappongono |
 | Discovery Home Assistant | ✅ |
 
-**Salva** → il dispositivo si riavvia. Entro un minuto, in HA, sotto *Impostazioni → Dispositivi
-e servizi → MQTT* comparirà automaticamente il dispositivo **AxHTherm** con tutte le entità.
+**Salva** → la pagina propone il riavvio, che serve per attivare MQTT: accetta. Entro un minuto, in HA, sotto *Impostazioni → Dispositivi
+e servizi → MQTT* comparirà automaticamente il dispositivo, con il nome della scheda
+(`axhtherm-XXXX`) e tutte le entità. Con due schede compaiono due dispositivi distinti.
 
 ## 3. Cosa appare in HA (auto-discovery)
 
-- **Termostato (climate)**: temperatura mosto, setpoint, stato riscalda/raffredda, off/auto.
-  Dalla scheda climate imposti il setpoint e spegni; per i profili usa i pulsanti.
+- **Termostato (climate)**: temperatura mosto, setpoint (da −1 a 40 °C), stato
+  riscalda/raffredda, off/auto. Dalla scheda climate imposti il setpoint e spegni; per i profili
+  usa i pulsanti.
 - **Sensori**: temperature mosto/camera/ambiente, setpoint, modalità, step, densità, OG,
-  attenuazione, ABV, giorni di fermentazione, età densità, batteria iSpindel, memoria, segnale.
+  attenuazione, ABV, giorni di fermentazione, età densità, batteria iSpindel, memoria, segnale,
+  ritardo massimo del ciclo di controllo dall'avvio, pendenza della temperatura (°C/h),
+  **cold crash** (`-`, `in discesa`, `raggiunto`) e **cold crash: arrivo stimato** (minuti).
+  Dalla 3.16.0 la densità ha l'unità (SG o °P), e ci sono anche:
+  - **Fermentazione**: `attiva`, `rallenta`, `ferma` o `-` (dati insufficienti), calcolata
+    sulle medie orarie del densimetro;
+  - **Calo della densità**: SG o °P al giorno, sulle ultime 24 ore, negativo quando cala;
+  - **Allarmi attivi**: i codici di `docs/ALLARMI.md` separati da virgola (per esempio
+    `SONDA_CAMERA,OROLOGIO`), oppure `nessuno`.
 - **Sensori binari**: riscaldamento, raffreddamento, uscite armate, profilo in marcia,
-  **profilo completato**, allarme, densità stantia, batteria bassa.
-- **Pulsanti**: Avvia / Ferma / Pausa / Riprendi / Salta step del profilo.
+  **profilo completato**, allarme, densità stantia, batteria bassa, **caldo bloccato** (un
+  controllo di sicurezza ha bloccato il riscaldatore: si sblocca solo dalla UI o da seriale;
+  il motivo è nel campo `heat_lock_code` dello stato), **failsafe non attivo**, **cold crash
+  raggiunto** (si accende quando il mosto arriva alla temperatura di cold crash), **cold crash
+  lento** (in 6 ore è sceso meno della soglia), **antigelo attivo** e **mosto troppo freddo**. I sensori di problema accendono anche il sensore
+  «allarme». Dalla 3.16.0 anche:
+  - **Fermentazione finita**: densità ferma da 48 ore, con attenuazione almeno del 50%;
+  - **Fermentazione ferma?**: densità ferma da 48 ore ma sopra l'atteso. È un avviso, non
+    entra in «allarme», e si disattiva in Impostazioni;
+  - **Step in attesa di conferma**: uno step con «aspetta la mia conferma» è finito;
+  - **Ventola** (3.17.0): accesa o spenta, se ne hai assegnata una in Impostazioni.
+- **Pulsanti**: Avvia / Ferma / Pausa / Riprendi / Salta step del profilo, e **Conferma step**
+  (3.16.0).
+
+> Esito dei comandi (3.16.0): ogni comando ricevuto su `<base>/cmd/…` ha una risposta su
+> `<base>/cmd_result`, per esempio `{"cmd":"climate_temp","ok":false,"reason":1}`. Motivi:
+> 1 setpoint ignorato (scheda ferma o profilo finito), 2 avvio rifiutato (profilo già in corso),
+> 3 avvio fallito, 4 valore o comando non valido, 5 niente da confermare. I rifiuti finiscono
+> anche nel registro eventi della scheda.
 
 > L'entità climate «off/auto»: *off* ferma tutto; *auto* (da fermo) avvia la modalità
 > termostato al setpoint impostato. I profili si avviano/gestiscono coi pulsanti.
@@ -71,6 +98,39 @@ automation:
         data:
           title: "⚠️ AxHTherm in allarme"
           message: "Controlla il termostato (sonda, orologio o configurazione)."
+
+  - alias: "AxHTherm · cold crash raggiunto"
+    trigger:
+      - platform: state
+        entity_id: binary_sensor.axhtherm_cold_crash_raggiunto
+        to: "on"
+    action:
+      - service: notify.notify
+        data:
+          title: "❄️ Cold crash raggiunto"
+          message: "La birra è arrivata alla temperatura di cold crash: resta lì finché non fermi il profilo."
+
+  - alias: "AxHTherm · fermentazione finita"
+    trigger:
+      - platform: state
+        entity_id: binary_sensor.axhtherm_fermentazione_finita
+        to: "on"
+    action:
+      - service: notify.notify
+        data:
+          title: "🍺 Fermentazione finita"
+          message: "La densità è ferma da 48 ore: puoi pensare al cold crash o all'imbottigliamento."
+
+  - alias: "AxHTherm · step da confermare"
+    trigger:
+      - platform: state
+        entity_id: binary_sensor.axhtherm_step_in_attesa_di_conferma
+        to: "on"
+    action:
+      - service: notify.notify
+        data:
+          title: "✋ Tocca a te"
+          message: "Uno step è finito e aspetta la conferma (dry hop, campione, travaso)."
 
   - alias: "AxHTherm · batteria iSpindel bassa"
     trigger:
@@ -135,14 +195,7 @@ rest_command:
     url: "http://192.168.1.50/ispindel"
     method: POST
     content_type: "application/json"
-    payload: '{"name": "Tilt", "gravity": {{ states("sensor.tilt_gravity") | float(0) }}, "temperature": {{ states("sensor.tilt_temperature") | float(0) }}}'
-
-> **Il campo `name` conta, con due camere.** Ogni camera segue solo il densimetro che le è
-> assegnato in Impostazioni, e l'abbinamento è **per nome**. Dando un nome al Tilt lo si può
-> assegnare a una camera precisa; una lettura **senza** `name` viene sempre attribuita alla
-> **camera 1**, che è il comportamento storico ed è il motivo per cui questa ricetta continua
-> a funzionare anche senza il campo. Se hai impostato un token iSpindel, va aggiunto al
-> payload, altrimenti la richiesta prende 401.
+    payload: '{"name": "Tilt", "gravity": {{ states("sensor.tilt_gravity") | float(0) }}, "temperature": {{ states("sensor.tilt_temperature") | float(0) }}, "temp_units": "{{ "F" if state_attr("sensor.tilt_temperature", "unit_of_measurement") == "°F" else "C" }}"}'
 
 automation:
   - alias: "AxHTherm · inoltra densità dal Tilt"
@@ -152,6 +205,13 @@ automation:
     action:
       - service: rest_command.axhtherm_gravity
 ```
+
+> **Il campo `name`.** Se in Impostazioni hai scelto un densimetro preciso, il termostato accetta
+> solo le letture con quel nome: in quel caso scegli «Tilt» o togli il filtro. Una lettura
+> **senza** `name` viene sempre accettata. Se hai impostato il codice dei densimetri, va aggiunto
+> al payload come `"token": "..."`, altrimenti la richiesta prende 401. Dalla 3.9.0 la scheda
+> legge `temp_units`, quindi un Tilt in °F arriva corretto.
+
 
 ## 8. Accesso da remoto
 
@@ -165,5 +225,5 @@ resta sulla LAN e non tocca mai internet.
 
 ### Se HA è spento o irraggiungibile
 Il termostato continua a controllare frigo e cavo, la web UI locale
-(`http://axhtherm.local` / IP) resta pienamente utilizzabile, iSpindel continua a pubblicare.
+(`http://<nome>.local` / IP) resta pienamente utilizzabile, iSpindel continua a pubblicare.
 Il client MQTT ritenta la connessione in sottofondo, senza mai fermare il loop di controllo.

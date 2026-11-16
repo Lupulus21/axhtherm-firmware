@@ -5,7 +5,6 @@
 #include <ArduinoJson.h>
 #include <functional>
 #include "svc/AppStatus.h"
-#include "ax_dimensions.h"
 
 // MQTT opzionale (spento di default) con auto-discovery Home Assistant.
 // Monitoraggio completo (sensori + sensori binari + entità climate) e controllo
@@ -16,49 +15,47 @@
 //   climate_mode : "off" -> ferma tutto ; "auto" -> se fermo, avvia il termostato
 //   climate_temp : float -> override del setpoint corrente / setpoint termostato
 //   profile      : "start"|"stop"|"pause"|"resume"|"skip"
-//
-// Con piu' camere ogni camera ha il suo ramo: la camera 1 resta su <base>/... — quindi
-// entita' e automazioni Home Assistant gia' configurate NON cambiano — e le successive
-// stanno su <base>/ch<N>/... . Il topic di disponibilita' (<base>/status, il LWT) resta
-// unico: e' il dispositivo a essere online o offline, non la singola camera.
 class MqttSvc {
  public:
   void begin(bool enabled, const String& host, uint16_t port, const String& user,
              const String& pass, const String& baseTopic, bool haDiscovery,
              const String& deviceName);
-  // Getter dello stato per camera: puntatore a funzione, non std::function, per non
-  // allocare a ogni giro di loop e non copiare gli AppStatus (176 B l'uno).
-  using StatusGetter = const AppStatus& (*)(uint8_t);
-  void loop(uint32_t nowMs, bool staUp, uint8_t chambers, StatusGetter get);
+  void loop(uint32_t nowMs, bool staUp, const AppStatus& st);
   // Dispatcher unico dei comandi: (nome, payload). Implementato in main.
-  // (camera, comando, payload)
-  void setCommandHandler(std::function<void(uint8_t, const String&, const String&)> f) {
+  void setCommandHandler(std::function<void(const String&, const String&)> f) {
     onCmd_ = std::move(f);
   }
   bool connected() { return enabled_ && cli_.connected(); }
+  bool enabled() const { return enabled_; }
+  uint16_t failures() const { return fails_; }  // tentativi falliti di fila (0 = ok)
   // Da chiamare dopo un comando/transizione per riflettere subito lo stato in HA.
   void requestPublish() { lastPublishMs_ = 0; }
-  // Rinvia il failsafe hardware durante la discovery: pubblica ~29 entita' PER CAMERA in
-  // un solo giro di loop, ognuna con una write TCP bloccante. Con due camere sono 58
-  // publish, che nel caso peggiore superano la finestra del failsafe — lo farebbe
-  // scattare a ogni riconnessione MQTT, su un'operazione del tutto legittima.
+  // Rinvia il failsafe hardware durante la discovery: pubblica ~29 entita' in un solo giro
+  // di loop, ognuna con una write TCP bloccante, e nel caso peggiore (broker lento) si
+  // avvicinerebbe alla finestra del failsafe su un'operazione del tutto legittima.
   void setProgress(void (*fn)()) { progress_ = fn; }
+  // Unita' della densita' per la discovery (3.16.0): SG o °P sulle entita' di HA.
+  void setGravityUnit(bool plato) { plato_ = plato; }
+  // Esito di un comando ricevuto (3.16.0): un comando rifiutato non si perde in silenzio.
+  // reason: 1 setpoint ignorato (scheda ferma o profilo finito), 2 avvio rifiutato (profilo
+  // gia' in corso), 3 avvio fallito, 4 valore non valido, 5 niente da confermare.
+  void publishResult(const String& cmd, bool ok, uint8_t reason);
 
  private:
   void publishDiscovery();
-  void publishState(const AppStatus& st, uint8_t ch);
-  // Ramo dei topic di una camera: la 0 usa base_ nudo (retrocompatibile).
-  String chamberBase(uint8_t ch) const { return ch ? base_ + "/ch" + String(ch + 1) : base_; }
-  // Suffisso di identita' per le entita' Home Assistant: vuoto sulla camera 0, cosi'
-  // gli entity_id gia' in uso restano invariati.
-  static String chamberSuffix(uint8_t ch) { return ch ? "_ch" + String(ch + 1) : String(); }
-  void pubSensor(const String& devId, uint8_t ch, const char* key, const char* label,
-                 const char* unit, const char* devClass, const char* stateClass);
-  void pubBinary(const String& devId, uint8_t ch, const char* key, const char* label,
-                 const char* devClass);
-  void pubButton(const String& devId, uint8_t ch, const char* key, const char* label,
-                 const char* payload);
+  void publishClimate(const String& devId);
+  void publishState(const AppStatus& st);
+  void pubSensor(const String& devId, const char* key, const char* label, const char* unit,
+                 const char* devClass, const char* stateClass);
+  void pubBinary(const String& devId, const char* key, const char* label, const char* devClass);
+  void pubButton(const String& devId, const char* key, const char* label, const char* payload);
   void addDevice(JsonObject& doc, const String& devId);
+  void noteFailure();
+
+  static constexpr uint32_t kConnectTimeoutMs = 500;
+  static constexpr uint32_t kRetryMinMs = 30000;
+  static constexpr uint32_t kRetryMaxMs = 300000;
+  static constexpr uint16_t kReresolveAfter = 5;
 
   bool enabled_ = false;
   String host_, user_, pass_, base_, name_;
@@ -70,8 +67,12 @@ class MqttSvc {
   uint32_t lastPublishMs_ = 0;
   bool discoveryDone_ = false;
   bool triedOnce_ = false;      // per non ritardare il primo tentativo di 30 s
-  IPAddress serverIp_;          // IP risolto una volta: niente DNS bloccante ad ogni retry
+  IPAddress serverIp_;          // IP risolto: niente DNS bloccante ad ogni retry
   bool ipResolved_ = false;
-  std::function<void(uint8_t, const String&, const String&)> onCmd_;
+  bool hostIsIp_ = false;       // broker indicato come IP: mai DNS
+  uint16_t fails_ = 0;          // fallimenti di fila
+  uint32_t retryMs_ = kRetryMinMs;  // attesa attuale fra i tentativi
+  std::function<void(const String&, const String&)> onCmd_;
   void (*progress_)() = nullptr;
+  bool plato_ = false;
 };

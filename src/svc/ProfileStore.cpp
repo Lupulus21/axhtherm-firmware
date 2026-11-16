@@ -24,7 +24,7 @@ static StepType typeFromName(const String& s) {
 
 static String libPath(uint8_t id) { return String("/profiles/p") + id + ".json"; }
 
-// Un singolo step -> oggetto JSON (14 campi). Usato sia dalla serializzazione in blocco
+// Un singolo step -> oggetto JSON (14 campi, 15 con "attendi il target"). Usato sia dalla serializzazione in blocco
 // (stepsToJson, per la GET) sia da quella in streaming (writeFile): un solo punto in cui
 // definire i campi, così i due percorsi non possono divergere.
 static void stepToJson(const StepDef& s, JsonObject o) {
@@ -42,6 +42,8 @@ static void stepToJson(const StepDef& s, JsonObject o) {
   o["stableHours"] = s.stableHours;
   o["allowHeat"] = s.allowHeat;
   o["allowCool"] = s.allowCool;
+  if (s.waitTarget) o["waitTarget"] = true;  // solo se attivo: i profili esistenti non cambiano
+  if (s.confirm) o["confirm"] = true;        // idem (3.16.0)
 }
 
 void ProfileStore::stepsToJson(const StepDef* steps, uint8_t count, JsonDocument& doc) {
@@ -72,6 +74,8 @@ uint8_t ProfileStore::stepsFromJson(JsonDocument& doc, StepDef* steps) {
     s.stableHours = o["stableHours"] | 48.0f;
     s.allowHeat = o["allowHeat"] | true;
     s.allowCool = o["allowCool"] | true;
+    s.waitTarget = o["waitTarget"] | false;
+    s.confirm = o["confirm"] | false;
     steps[n++] = s;
   }
   return n;
@@ -87,7 +91,7 @@ bool ProfileStore::readFile(const String& path, String* name, StepDef steps[],
   // contemporanee su ~17 KB di heap frammentato -> profili salvati come "{}".
   // In LETTURA la coesistenza non c'e': verificato che ogni chiamante libera questo doc
   // prima di allocare il proprio (WebApi.cpp handleProfileById: load() ritorna, poi
-  // alloca la risposta), e al boot le camere si leggono in sequenza. Il picco resta di UN
+  // alloca la risposta). Il picco resta di UN
   // solo documento, com'era nella v2.23.2.
   // ArduinoJson 6 non offre un parser incrementale: uno streaming vero richiederebbe un
   // parser scritto a mano, e ridurre la capacita' a occhio rischierebbe di rendere
@@ -159,13 +163,12 @@ bool ProfileStore::writeFile(const String& path, const String& tmpPath, const St
   return fsCommitAtomic(tmpPath.c_str(), path.c_str(), want);  // rename atomico + verifica del flush
 }
 
-bool ProfileStore::loadActive(uint8_t ch, String* name, StepDef steps[], uint8_t* count) {
-  return readFile(activePath(ch), name, steps, count);
+bool ProfileStore::loadActive(String* name, StepDef steps[], uint8_t* count) {
+  return readFile(kPath, name, steps, count);
 }
 
-bool ProfileStore::saveActive(uint8_t ch, const String& name, const StepDef* steps, uint8_t count) {
-  const String path = activePath(ch);
-  return writeFile(path, path.substring(0, path.length() - 5) + ".tmp", name, steps, count);
+bool ProfileStore::saveActive(const String& name, const StepDef* steps, uint8_t count) {
+  return writeFile(kPath, "/profile.tmp", name, steps, count);
 }
 
 bool ProfileStore::load(uint8_t id, String* name, StepDef steps[], uint8_t* count) {
@@ -190,8 +193,10 @@ bool ProfileStore::exists(uint8_t id) const {
   return LittleFS.exists(libPath(id));
 }
 
-void ProfileStore::list(JsonArray& arr) {
-  StepDef steps[ax::kMaxSteps];
+bool ProfileStore::list(JsonArray& arr) {
+  StepBuf buf;
+  if (!buf) return false;
+  StepDef* steps = buf.get();
   uint8_t n = 0;
   String name;
   for (uint8_t id = 1; id <= kMaxProfiles; id++) {
@@ -226,4 +231,5 @@ void ProfileStore::list(JsonArray& arr) {
     o["gravity"] = grav;
     yield();
   }
+  return true;
 }

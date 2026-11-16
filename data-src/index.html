@@ -36,9 +36,6 @@
 html{overflow-x:clip}
 body{margin:0;background:var(--bg);color:var(--ink);overflow-x:clip;
  font:15px/1.45 -apple-system,system-ui,"Segoe UI",sans-serif}
-.chsel{display:flex;gap:4px;background:var(--bg);border:1px solid var(--border);border-radius:999px;padding:3px}
-.chsel button{border:0;background:transparent;color:var(--muted);font:inherit;font-size:13px;font-weight:600;padding:4px 12px;border-radius:999px;cursor:pointer;white-space:nowrap;max-width:11ch;overflow:hidden;text-overflow:ellipsis}
-.chsel button.on{background:var(--surface);color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,.35)}
 header{display:flex;align-items:center;gap:12px;
  padding:calc(10px + env(safe-area-inset-top)) 16px 10px;background:var(--surface);
  background-image:repeating-linear-gradient(96deg,#1e1a12,#1e1a12 7px,#211c13 7px,#211c13 14px);
@@ -97,6 +94,9 @@ section.tab{display:none}section.tab.on{display:block}
  font-size:14px;color:var(--ink);border:1px solid var(--border);border-left:3px solid var(--muted)}
 .alert.warn{background:color-mix(in srgb,var(--warn) 14%,var(--surface));border-left-color:var(--warn)}
 .alert.crit{background:color-mix(in srgb,var(--crit) 14%,var(--surface));border-left-color:var(--crit)}
+.alert.ok{background:color-mix(in srgb,var(--ok,#3a9a5b) 14%,var(--surface));border-left-color:var(--ok,#3a9a5b)}
+/* Dati fermi: i valori si spengono, cosi' un numero vecchio non sembra vivo. */
+body.stale #tab-dash .card{filter:grayscale(1);opacity:.5}
 .panel{background:var(--surface);border:1px solid var(--border);border-radius:16px;
  padding:16px;margin-top:12px}
 .panel h2{font-size:15px;margin:0 0 10px;font-weight:600}
@@ -174,9 +174,6 @@ hr{border:0;border-top:1px solid var(--border);margin:12px 0}
 <body>
 <header>
  <h1>AxHTherm</h1><span class="ver" id="fw"></span>
- <!-- Selettore di camera: reso visibile solo se il dispositivo ne gestisce piu' di una.
-      Sta nell'intestazione perche' governa dashboard, andamento e profilo insieme. -->
- <div class="chsel" id="chsel" hidden></div>
  <nav>
   <button data-tab="dash" class="on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 15a8 8 0 0 1 16 0"/><path d="M12 15l4.2-3.2"/></svg>Dashboard</button>
   <button data-tab="trend"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 16l5-5 4 3 7-8"/><path d="M4 20h16"/></svg>Andamento</button>
@@ -189,6 +186,8 @@ hr{border:0;border-top:1px solid var(--border);margin:12px 0}
 
 <section class="tab on" id="tab-dash">
  <div id="alerts"></div>
+ <div id="rbpend" class="alert warn" style="display:none">Impostazioni salvate, attive al prossimo
+  riavvio. <button class="b sec" id="brbnow">Riavvia ora</button></div>
  <div class="card hero" id="hero">
   <div class="herotop"><span class="probe probe-mosto"></span><span class="k" id="l0">Mosto</span>
    <span id="armbadge" class="badge off">DISARMATO</span></div>
@@ -215,9 +214,16 @@ hr{border:0;border-top:1px solid var(--border);margin:12px 0}
   <div class="muted" id="profpreview"></div>
   <div class="row" id="crashrow" style="display:none">
    <label class="f">cold crash fino a (°C)<input type="number" id="cc_t" step="0.5" min="-1" max="12" value="2"></label>
-   <label class="f">e mantieni (giorni)<input type="number" id="cc_d" step="0.5" min="0.5" max="30" value="3"></label>
+   <label class="f">velocità<select id="cc_v"><option value="0.5">3 °C ogni 6 ore</option>
+    <option value="0.25">1,5 °C ogni 6 ore (più dolce)</option></select></label>
+   <label class="f">allarme se in 6 ore scende meno di (°C)<input type="number" id="cc_m" step="0.25" min="0.25" max="2" value="1.5"></label>
    <button class="b sec" id="bcrash">Esegui cold crash</button>
   </div>
+  <div class="muted" id="crashnote" style="display:none">Arrivato alla temperatura la mantiene
+   finché non fermi il profilo.</div>
+  <div class="row" id="confrow" style="display:none"><span><b>Lo step è finito e aspetta la tua
+   conferma</b> (dry hop, campione, travaso): il setpoint resta quello di fine step.</span>
+   <button class="b" id="bconfirm">Conferma e prosegui</button></div>
   <div class="row">
    <button class="b sec" id="bpause">Pausa</button>
    <button class="b sec" id="bresume">Riprendi</button>
@@ -308,6 +314,14 @@ hr{border:0;border-top:1px solid var(--border);margin:12px 0}
   <div class="muted" id="profsummary"></div>
   <div class="muted">Max 12 step. La fermentazione in corso lavora su una copia:
    modificare la libreria non la tocca.</div>
+  <div class="row" style="margin-top:10px"><button class="b sec" id="blibexp">Scarica tutta la libreria</button>
+   <button class="b sec" id="blibimp">Ripristina libreria…</button>
+   <input type="file" id="flibimp" accept=".json,application/json" style="display:none"></div>
+  <div class="muted">Un file con tutti i tuoi profili, da tenere al sicuro o da caricare su
+   un'altra scheda. Al ripristino i profili con un nome già presente vengono saltati, e le
+   soglie di densità si convertono se il file è in un'altra unità (SG/°Plato). Il file prende
+   l'unità impostata ora sulla scheda: i profili scritti prima di un cambio d'unità vanno
+   ricontrollati.</div>
  </div>
 </section>
 
@@ -326,12 +340,13 @@ hr{border:0;border-top:1px solid var(--border);margin:12px 0}
     <label class="f">Gateway<input id="c_gw"></label>
     <label class="f">DNS<input id="c_dns"></label>
    </div>
-   <label class="f">Password SoftAP di soccorso (min 8)<input id="c_appass" type="password" placeholder="***"></label>
+   <label class="f">Password della rete di configurazione (min 8)<input id="c_appass" type="password" placeholder="***"></label>
    <label class="f">SoftAP dopo N minuti di rete giù<input type="number" id="c_apmin" min="1" max="60"></label>
   </div>
   <div class="panel"><h2>Sistema</h2>
    <label class="f">Nome (mDNS: nome.local)<input id="c_host"></label>
-   <label class="f">Password UI/OTA (utente: admin)<input id="c_uipass" type="password" placeholder="***"></label>
+   <label class="f">Nuova password interfaccia (min 8, utente: admin)<input id="c_uipass" type="password" placeholder="***" autocomplete="new-password"></label>
+   <label class="f">Password attuale (serve solo per cambiarla)<input id="c_curpass" type="password" autocomplete="current-password"></label>
    <label class="f"><span><input type="checkbox" id="c_ntp"> NTP attivo</span></label>
    <label class="f">Server NTP<input id="c_ntpsrv"></label>
    <label class="f">Timezone (POSIX)<input id="c_tz"></label>
@@ -362,22 +377,47 @@ hr{border:0;border-top:1px solid var(--border);margin:12px 0}
     <label class="f">Inversione caldo/freddo (s)<input type="number" id="c_minsw"></label>
    </div>
   </div>
+  <div class="panel"><h2>Limiti sull'aria della camera</h2>
+   <div class="muted">Usano la sonda «camera». Il freddo si sospende se l'aria scende sotto l'aria
+    minima (protegge dal gelo nel cold crash; −10 = nessun minimo) o, se impostata, sotto «setpoint −
+    distanza» (rallenta il raffreddamento iniziale; 0 = spento). Il caldo si sospende se l'aria sale
+    oltre «setpoint + distanza» (0 = spento). Si riparte con 3 °C di margine.</div>
+   <div class="row">
+    <label class="f">Aria minima col freddo (°C, −10…10)<input type="number" step="any" id="c_airmin"></label>
+    <label class="f">Distanza sotto il setpoint (°C, 0 = spento)<input type="number" step="any" id="c_airbelow"></label>
+    <label class="f">Distanza sopra il setpoint (°C, 0 = spento)<input type="number" step="any" id="c_airabove"></label>
+   </div>
+  </div>
+  <div class="panel"><h2>Sicurezza del riscaldatore</h2>
+   <div class="muted">Se un controllo scatta, il <b>caldo viene bloccato</b> (il freddo resta attivo)
+    finché non lo sblocchi dalla dashboard. Il blocco resta anche dopo un riavvio.</div>
+   <div class="row">
+    <label class="f">Caldo acceso di continuo al massimo (ore, 2–48)<input type="number" id="c_hmax"></label>
+    <label class="f">Sonda ferma a caldo acceso (min, 15–240; 0 = spento)<input type="number" id="c_hstuck"></label>
+   </div>
+   <div class="muted">Il secondo controllo può scattare per errore con un riscaldatore molto debole su
+    tanto mosto: in quel caso alza i minuti o mettilo a 0. Questi controlli tolgono il comando al
+    caldo, ma non possono aprire un relè con i contatti incollati.</div>
+  </div>
   <div class="panel"><h2>iSpindel</h2>
    <div class="muted">Endpoint da impostare sullo iSpindel: <b>http://IP/ispindel</b> (HTTP, porta 80)</div>
    <label class="f">Dato stantio dopo (min)<input type="number" id="c_stale"></label>
    <label class="f">Allarme batteria (V)<input type="number" step="any" id="c_batt"></label>
+   <label class="f"><span><input type="checkbox" id="c_stuck"> Avvisa se la fermentazione sembra ferma</span></label>
    <label class="f">Unità<select id="c_gunit"><option value="sg">SG</option><option value="plato">°Plato</option></select></label>
-   <label class="f">Token (opzionale: se impostato, lo iSpindel deve inviarlo)
-    <input id="c_itok" type="password" placeholder="*** (vuoto = nessun controllo)"></label>
+   <label class="f">Codice dei densimetri (token: se impostato, il densimetro deve inviarlo)
+    <input id="c_itok" type="password" placeholder="*** (vuoto = invariato)"></label>
+   <button class="b sec" id="bgentok">Genera codice</button>
+   <button class="b sec" id="bdeltok">Togli codice</button>
+   <div class="muted">Senza codice la scheda accetta solo letture inviate come JSON; con un
+    profilo a densità il codice è consigliato. Dopo averlo generato, copialo nel campo «Token»
+    del densimetro (o nel payload del ponte), poi salva: dopo il salvataggio la scheda non lo
+    mostra più.</div>
    <div id="c_dens"></div>
    <div class="muted">L'elenco contiene i densimetri che hanno già trasmesso al termostato.
-    Ogni camera segue <b>solo</b> lo strumento che le è assegnato: gli altri non ne
+    Scegliendone uno, la fermentazione segue <b>solo</b> quello strumento: gli altri non ne
     influenzano densità, OG e allarmi, ma restano utilizzabili per la calibrazione.
-    La <b>correzione</b> è la taratura di quello strumento, non del sistema: due densimetri
-    hanno tarature diverse.
-    <br>Una camera <b>senza densimetro</b> non avvia profili che contengono step a densità,
-    e se ne sta già eseguendo uno resta ferma segnalandolo — non avanza al limite di durata,
-    perché avanzerebbe senza aver mai misurato.</div>
+    La <b>correzione</b> è la taratura di quello strumento.</div>
   </div>
   <div class="panel"><h2>Calibrazione densimetro</h2>
    <div class="muted">Lo iSpindel misura un <b>angolo</b> e lo converte in densità con un
@@ -402,11 +442,28 @@ hr{border:0;border-top:1px solid var(--border);margin:12px 0}
    <div id="cal_out"></div>
    <div class="row"><button class="b danger" id="cal_clear">Cancella tutti i punti</button></div>
   </div>
+  <div class="panel"><h2>Ventola</h2>
+   <label class="f">Relè della ventola<select id="c_fanrel"></select></label>
+   <label class="f">Funzionamento<select id="c_fanmode"><option value="0">segue caldo e freddo</option>
+    <option value="1">sempre accesa (a regolazione attiva)</option></select></label>
+   <label class="f">Resta accesa dopo (min)<input type="number" step="0.5" min="0" max="30" id="c_fanpost"></label>
+   <label class="f">Ricircolo: accesa (min)<input type="number" step="1" min="0" id="c_fancon"></label>
+   <label class="f">ogni (min)<input type="number" step="1" min="0" id="c_fanevery"></label>
+   <div class="muted">Mescola l'aria della camera: con il frigo la temperatura si uniforma e
+    la sonda dell'aria legge meglio. Si spegne quando la scheda è disarmata o ferma. Usa un
+    relè libero, mai quello del caldo o del freddo (in quel caso la ventola viene ignorata).
+    Meglio REL2: è sui pin diretti, coperto dalla protezione contro il blocco del programma.
+    Ricircolo 0 = spento; per esempio 5 ogni 60 la fa girare almeno 5 minuti ogni ora.</div>
+  </div>
   <div class="panel"><h2>Display OLED</h2>
    <label class="f"><span><input type="checkbox" id="c_oled"> Abilitato</span></label>
    <label class="f">Driver<select id="c_odrv"><option value="ssd1306">SSD1306</option><option value="sh1106">SH1106</option></select></label>
    <label class="f">Indirizzo<select id="c_oaddr"><option value="60">0x3C</option><option value="61">0x3D</option></select></label>
    <label class="f"><span><input type="checkbox" id="c_oflip"> Ruota 180°</span></label>
+   <label class="f">Luminosità<select id="c_obri"><option value="255">massima</option><option value="207">normale</option><option value="100">media</option><option value="30">bassa</option></select></label>
+   <div class="muted">Il display mostra a turno lo stato, la fermentazione (densità, step) e,
+    se ce n'è più d'uno, tutti gli allarmi. Il contenuto si sposta di un paio di pixel ogni
+    tanto, per non segnare lo schermo acceso giorno e notte.</div>
   </div>
   <div class="panel"><h2>Log</h2>
    <label class="f">Campione ogni (min)<input type="number" id="c_lsm" min="1"></label>
@@ -426,11 +483,20 @@ hr{border:0;border-top:1px solid var(--border);margin:12px 0}
   </div>
  </div>
  <div class="row" style="margin-top:12px"><button class="b" id="bsavecfg">Salva impostazioni</button>
-  <span class="muted">Le modifiche a rete/display/MQTT/orologio riavviano il dispositivo.</span></div>
+  <span class="muted">Le modifiche a rete/display/MQTT/orologio si attivano al riavvio: la pagina chiede se farlo subito.</span></div>
 </section>
 
 <section class="tab" id="tab-sys">
- <div class="panel"><h2>Stato</h2><div id="sysinfo" class="mono muted"></div></div>
+ <div class="panel"><h2>Stato</h2><div id="sysinfo" class="mono muted"></div>
+  <div class="row" style="margin-top:8px"><button class="b sec" id="bdiag">Scarica diagnostica</button></div>
+  <div class="muted">Un file con stato, memoria, ultimi riavvii ed eventi, da allegare a una
+   segnalazione. Le password non ci sono.</div></div>
+ <div class="panel"><h2>Registro eventi</h2>
+  <div class="muted">Gli ultimi 256 eventi (avvii, armamenti, step, allarmi…), salvati nella
+   memoria del modulo orologio: restano anche togliendo la corrente.</div>
+  <div id="evlist" class="mono" style="margin-top:6px"></div>
+  <div class="row"><button class="b sec" id="bevnew">Aggiorna</button>
+   <button class="b sec" id="bevold">Più vecchi</button></div></div>
  <div class="panel"><h2>Mapping uscite e armamento</h2>
   <div class="muted">Le uscite nascono DISARMATE. Identifica i relè col test qui sotto (a carichi
   scollegati!), poi assegna e ARMA. Carichi reali: frigo + cavo riscaldante.</div>
@@ -487,11 +553,23 @@ hr{border:0;border-top:1px solid var(--border);margin:12px 0}
  </div>
  <div class="panel"><h2>Aggiornamento firmware (OTA)</h2>
   <div class="row"><input type="file" id="fwfile" accept=".bin">
+   <input type="password" id="otapw" placeholder="password attuale" autocomplete="current-password">
    <button class="b" id="bupload">Carica e installa</button></div>
   <div id="otaout" class="muted"></div>
  </div>
+ <div class="panel"><h2>Backup della configurazione</h2>
+  <div class="muted">Scarica le impostazioni in un file, per ripristinarle dopo un reset di
+   fabbrica o una flash cancellata. Le password (interfaccia, WiFi, MQTT, codice dei densimetri)
+   <b>non</b> sono nel file: al ripristino restano quelle della scheda. La libreria dei profili
+   ha il suo file nella scheda Profili («Scarica tutta la libreria»). La taratura del densimetro
+   non è nel file: dopo un reset di fabbrica va rifatta.</div>
+  <div class="row"><button class="b sec" id="bbackup">Scarica backup</button>
+   <input type="file" id="rsfile" accept=".json,application/json">
+   <button class="b sec" id="brestore">Ripristina</button></div>
+ </div>
  <div class="panel"><h2>Manutenzione</h2>
   <div class="row"><button class="b sec" id="breboot">Riavvia</button>
+   <button class="b sec" id="blogout">Esci</button>
    <button class="b danger" id="bfactory">Reset di fabbrica</button></div>
  </div>
 </section>
@@ -534,59 +612,17 @@ document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>{
  // Il pannello sonde si aggiorna da solo mentre è a schermo: serve a vedere i valori
  // grezzi stabilizzarsi durante la taratura senza premere "Aggiorna" ogni minuto.
  probeTimerStop();
- if(b.dataset.tab==="sys"){probeLoad();PROBETIMER=setInterval(probeLoad,15000);}
+ if(b.dataset.tab==="sys"){probeLoad();evLoad(false);PROBETIMER=setInterval(()=>{if(!document.hidden)probeLoad()},15000);}
 });
 
-// --- Camera selezionata -------------------------------------------------------------
-// Il firmware serve gli endpoint che dipendono dalla camera in due forme: quella storica
-// (/api/status, camera 1) e quella esplicita (/api/ch/<n>/status). La forma per camera
-// esiste SOLO se il dispositivo ne gestisce piu' di una — il firmware non la registra a
-// camera singola, perche' ogni rotta costa heap. Quindi qui: con CH=1 si usano sempre i
-// percorsi storici, che funzionano in entrambe le configurazioni.
-let CH=1,NCH=1;
-try{const v=+localStorage.getItem("ax_ch");if(v>=1)CH=v}catch(e){}
-// Percorsi serviti PER CAMERA. Gli altri (configurazione, libreria profili, taratura,
-// diagnostica, orologio, OTA) sono di dispositivo e non vanno mai riscritti.
-const CH_PATHS=["/api/status","/api/profile","/api/setpoint","/api/thermostat",
- "/api/gravity/og","/api/outputs/arm","/api/outputs/disarm","/api/log","/api/log.csv"];
-function chPath(p){
- if(CH<2||!p.startsWith("/api/"))return p;
- const base=p.split("?")[0];
- // Confronto esatto oppure sotto-percorso: cosi' /api/profile/start viene riscritto ma
- // /api/profiles (la LIBRERIA, che e' condivisa) no.
- if(!CH_PATHS.some(x=>base===x||base.startsWith(x+"/")))return p;
- return "/api/ch/"+CH+p.slice(4);
-}
-function renderChSel(n,label){
- NCH=n;const el=$("chsel");
- if(!(n>1)){el.hidden=true;el.innerHTML="";if(CH!==1){CH=1;try{localStorage.removeItem("ax_ch")}catch(e){}}return}
- if(CH>n){CH=1;try{localStorage.setItem("ax_ch",CH)}catch(e){}}
- // Il nome della camera corrente arriva da /api/status; per le altre si mostra il numero
- // finche' non le si visita (lo stato descrive una camera per volta).
- if(!renderChSel.nomi)renderChSel.nomi={};
- if(label)renderChSel.nomi[CH]=label;
- let h="";
- for(let i=1;i<=n;i++)h+='<button type="button" data-ch="'+i+'"'+(i===CH?' class="on"':'')+
-  ' title="'+esc(renderChSel.nomi[i]||("Camera "+i))+'">'+esc(renderChSel.nomi[i]||("Camera "+i))+'</button>';
- if(el.innerHTML!==h)el.innerHTML=h;
- el.hidden=false;
-}
-$("chsel").addEventListener("click",e=>{
- const b=e.target.closest("button[data-ch]");if(!b)return;
- const n=+b.dataset.ch;if(n===CH)return;
- CH=n;try{localStorage.setItem("ax_ch",CH)}catch(e){}
- renderChSel(NCH);
- // Si ricarica tutto cio' che dipende dalla camera. La libreria profili no: e' condivisa.
- const c=$("csv");if(c)c.href=chPath(c.getAttribute("href").replace(/^\/api\/ch\/\d+/,"/api"));
- refresh();loadLog();loadProfile();
-});
-
-async function api(path,opt){const r=await fetch(chPath(path),opt);
+async function api(path,opt){const r=await fetch(path,opt);
  if(!r.ok){let m="errore "+r.status;try{m=(await r.json()).error||m}catch(e){}
   // Con l'overlay di login a schermo il ciclo automatico continuerebbe a
   // interrogare /api/probes dietro la maschera, un 401 ogni 15 s.
   if(r.status===401&&path!=="/api/login"){$("login").style.display="block";probeTimerStop();}
-  throw new Error(m)} return r.json()}
+  const err=new Error(m);err.status=r.status;throw err}
+ // Una risposta che non si legge e' un guasto della scheda o della pagina, non della rete.
+ try{return await r.json()}catch(e){const err=new Error("risposta illeggibile dalla scheda");err.status=r.status;throw err}}
 $("blogin").onclick=async()=>{
  try{await post("/api/login",{password:$("loginpw").value});
   $("login").style.display="none";$("loginpw").value="";$("loginmsg").textContent="";
@@ -595,8 +631,10 @@ $("blogin").onclick=async()=>{
   toast("collegato ✓")}
  catch(e){$("loginmsg").textContent=e.message}};
 $("loginpw").addEventListener("keydown",e=>{if(e.key==="Enter")$("blogin").click()});
-const post=(p,b)=>api(p,{method:"POST",body:b?JSON.stringify(b):"{}"});
-const put=(p,b)=>api(p,{method:"PUT",body:JSON.stringify(b)});
+// JSON dichiarato: la scheda rifiuta l'accesso inviato come testo (un modulo da un altro sito).
+const JH={"Content-Type":"application/json"};
+const post=(p,b)=>api(p,{method:"POST",headers:JH,body:b?JSON.stringify(b):"{}"});
+const put=(p,b)=>api(p,{method:"PUT",headers:JH,body:JSON.stringify(b)});
 // Messaggio in pagina: iOS a volte sopprime alert() nelle web-app a tutto schermo.
 let snackT=0;
 function toast(msg){const s=$("snack");s.textContent=msg;s.style.display="block";
@@ -609,23 +647,34 @@ function fmtAge(s){if(s<90)return s+" s";if(s<5400)return Math.round(s/60)+" min
 // pagina lo dice a chiare lettere. Senza, una dashboard congelata (firmware in crash,
 // WiFi giù, blackout del controllore) resta indistinguibile da una viva — su un
 // dispositivo non sorvegliato è un guasto a sé.
+// Tre esiti distinti: nessuna risposta (fascia rossa), sessione scaduta (parla il pannello
+// di accesso, nessuna fascia), risposta arrivata ma pagina che non riesce a disegnarla
+// (fascia arancione: la rete funziona, il problema e' la pagina).
 let lastRefreshOk=Date.now();
-function markFresh(){lastRefreshOk=Date.now();const b=document.getElementById("offlineBanner");if(b)b.style.display="none";}
-function markStale(){
- if(Date.now()-lastRefreshOk<8000)return;  // grazia: qualche ciclo perso è normale
- let b=document.getElementById("offlineBanner");
+function banner(txt,col){let b=document.getElementById("offlineBanner");
  if(!b){b=document.createElement("div");b.id="offlineBanner";
-  b.style.cssText="position:fixed;top:0;left:0;right:0;z-index:9999;background:#b23b3b;color:#fff;text-align:center;padding:8px;font-weight:bold;box-shadow:0 2px 6px rgba(0,0,0,.4)";
+  b.style.cssText="position:fixed;top:0;left:0;right:0;z-index:9999;color:#fff;text-align:center;padding:8px;font-weight:bold;box-shadow:0 2px 6px rgba(0,0,0,.4)";
   document.body.appendChild(b);}
- const age=Math.round((Date.now()-lastRefreshOk)/1000);
- b.textContent="⚠ CONNESSIONE PERSA — i dati mostrati sono fermi da "+age+" s (ultimo aggiornamento "+new Date(lastRefreshOk).toLocaleTimeString()+")";
- b.style.display="block";
+ if(!txt){b.style.display="none";return}
+ b.style.background=col;b.textContent=txt;b.style.display="block"}
+function markFresh(){lastRefreshOk=Date.now();document.body.classList.remove("stale");banner("")}
+function markStale(){
+ const ms=Date.now()-lastRefreshOk;
+ if(ms>6500)document.body.classList.add("stale");  // due cicli persi: i valori si spengono
+ if(ms<10000)return;  // grazia per la fascia: qualche ciclo perso è normale
+ banner("⚠ CONNESSIONE PERSA — i dati mostrati sono fermi da "+Math.round(ms/1000)+
+  " s (ultimo aggiornamento "+new Date(lastRefreshOk).toLocaleTimeString()+")","#b23b3b");
 }
-async function refresh(){try{
- const st=await api("/api/status"); ST=st;
- $("fw").textContent="v"+st.fw;
- // Il dispositivo dichiara quante camere gestisce e come si chiama quella servita.
- renderChSel(st.chambers||1,st.chamberLabel);
+function markRenderError(e){document.body.classList.add("stale");
+ banner("⚠ PAGINA IN ERRORE — la scheda risponde, ma i dati non si riescono a mostrare ("+
+  (e&&e.message||e)+"). Ricarica la pagina.","#a8641a")}
+async function refresh(){let st;
+ try{st=await api("/api/status")}
+ catch(e){if(e.status===401){banner("");return}
+  if(e.status){markRenderError(e);return}  // la scheda ha risposto, ma con un errore
+  markStale();return}
+ try{ST=st;
+ $("fw").textContent=(st.host?st.host+" · ":"")+"v"+st.fw;
  for(let i=0;i<3;i++){const t=st.temps[i];
   $("l"+i).textContent=t.label;
   $("t"+i).innerHTML=t.valid?t.c.toFixed(1)+"<small> °C</small>":
@@ -646,6 +695,8 @@ async function refresh(){try{
  // Solo col PID attivo (duty>0): a isteresi il duty è 0 e "PID 0 %" col caldo acceso
  // sarebbe un numero falso e fuorviante.
  if(st.outputs.heat&&ST.mode!==0&&st.outputs.pidDuty>0)sub="PID "+st.outputs.pidDuty+" %";
+ if(st.outputs.fan)sub=(sub?sub+" · ":"")+"ventola accesa";
+ if(st.outputs.fanConflict)sub=(sub?sub+" · ":"")+"VENTOLA IGNORATA: stesso relè di caldo o freddo";
  $("outs").textContent=o;$("outsub").textContent=sub;
  $("hero").dataset.state=st.outputs.heat?"heat":st.outputs.cool?"cool":"";
  const modes=["FERMO","TERMOSTATO","PROFILO"];
@@ -671,24 +722,52 @@ async function refresh(){try{
  if(st.mode===2&&st.profile.stepEndsAt)
   si+="fine step prevista: "+new Date(st.profile.stepEndsAt*1000).toLocaleString("it-IT");
  if(st.profile.overrideActive)si+="  · setpoint manuale attivo";
+ if(st.slope){const v=+st.slope.cph;
+  si+=(si?"  · ":"")+(v>=0?"↗ +":"↘ ")+v.toFixed(2).replace(".",",")+" °C/h";
+  if(st.slope.etaMin>0){const m=st.slope.etaMin;
+   si+=" · al setpoint tra "+(m<90?m+" min":m<2880?Math.floor(m/60)+" h "+(m%60)+" min":Math.round(m/1440)+" giorni");}}
+ if(st.limits&&st.limits.airCool)si+="  · freddo sospeso: aria della camera al limite";
+ if(st.limits&&st.limits.airHeat)si+="  · caldo sospeso: aria della camera al limite";
+ if(st.limits&&st.limits.antigelo)si+="  · antigelo: caldo riacceso, il mosto è sotto il setpoint";
  $("stepinfo").textContent=si;
  // Ha senso solo se il termostato sta gia' regolando: a impianto fermo non c'e' nulla
  // da raffreddare, e su un profilo appena avviato sarebbe solo un modo per rovinarlo.
- $("crashrow").style.display=((st.mode===1||st.mode===2)&&
+ $("crashrow").style.display=$("crashnote").style.display=((st.mode===1||st.mode===2)&&
   !st.profile.waitingDelayedStart)?"":"none";
  renderRun();
  const al=$("alerts");al.innerHTML="";
+ // Arrivo del cold crash: segnalato in cima, finché il cold crash resta attivo.
+ if(st.crash&&st.crash.reachedEpoch){const d=document.createElement("div");d.className="alert ok";
+  d.textContent="✓ Cold crash: "+(+st.crash.targetC).toFixed(1)+" °C raggiunti il "+
+   new Date(st.crash.reachedEpoch*1000).toLocaleString("it-IT",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})+
+   ". Temperatura mantenuta finché non fermi il profilo.";al.appendChild(d)}
  st.alarms.forEach(a=>{const d=document.createElement("div");
-  d.className="alert "+(a.startsWith("uscite")||a.startsWith("PASSWORD")?"warn":"crit");
+  d.className="alert "+(a.startsWith("uscite")||a.startsWith("PASSWORD")||a.startsWith("CODICE")||a.startsWith("STEP")?"warn":"crit");
   d.textContent="⚠ "+a;al.appendChild(d)});
- $("sysinfo").textContent="fw v"+st.fw+" · heap "+st.heap+" B · IP "+st.net.ip+
+ if(st.heatLock){const b=document.createElement("button");b.className="b danger";
+  b.textContent="Sblocca il caldo";
+  b.onclick=()=>{if(!confirm("Sbloccare il caldo?\nFallo solo dopo aver capito e risolto la causa: "+
+    "il controllo che lo ha bloccato potrebbe aver visto un guasto vero."))return;
+   post("/api/safety/reset").then(refresh).catch(e=>toast(e.message))};
+  al.appendChild(b)}
+ // Elemento fisso, non ricreato a ogni aggiornamento: un tocco sul pulsante non va perso.
+ $("rbpend").style.display=st.rebootPending?"":"none";
+ $("confrow").style.display=st.profile&&st.profile.waitingConfirm?"":"none";
+ $("sysinfo").textContent="fw v"+st.fw+(st.build?" ("+st.build+")":"")+" · heap "+st.heap+" B"+
+  (st.heapMin!==undefined?" (minimo "+st.heapMin+" B, blocco max min "+st.heapMaxBlockMin+
+   " B"+(st.allocFail?", ALLOCAZIONI FALLITE "+st.allocFail:"")+")":"")+
+  (st.loop?" · ciclo: "+st.loop.late+" ritardi, max "+st.loop.maxLateMs+" ms":"")+" · IP "+st.net.ip+
   (st.net.ap?" (SoftAP attivo)":"")+" · RSSI "+st.net.rssi+" dBm · "+
   (st.time.trusted?"orologio OK":"OROLOGIO NON AFFIDABILE")+
-  (st.time.ntp?" (NTP)":"")+" · "+st.time.local;
+  (st.time.ntp?" (NTP)":"")+" · "+st.time.local+
+  (st.uptimeSec!==undefined?" · acceso da "+fmtUp(st.uptimeSec):"")+
+  (st.mqtt?" · MQTT "+(st.mqtt.state===2?"connesso":st.mqtt.state===1?"NON connesso"+
+   (st.mqtt.fails?" ("+st.mqtt.fails+" tentativi falliti)":""):"spento"):"")+
+  (st.eventsOn===false?" · registro eventi spento (EEPROM assente)":"");
  $("clock").textContent=st.time.local+(st.time.trusted?"":"  (NON AFFIDABILE)");
  renderFerment();
  markFresh();
-}catch(e){markStale();}}
+}catch(e){markRenderError(e)}}
 
 // ---- comandi marcia ----
 $("bstart").onclick=async()=>{const v=$("delaystart").value;
@@ -701,10 +780,14 @@ $("profsel").onchange=async()=>{
  if(!id){$("profpreview").textContent="";return}
  try{const p=await api("/api/profiles/"+id);
   $("profpreview").textContent=describeSteps(p.steps)}catch(e){}};
-$("bstop").onclick=()=>post("/api/profile/stop").then(refresh).catch(e=>toast(e.message));
+$("bconfirm").onclick=()=>post("/api/profile/confirm").then(()=>{toast("confermato: il profilo prosegue");refresh()})
+ .catch(e=>toast(e.message));
+$("bstop").onclick=()=>{if(!confirm("Fermare il profilo?\nLa regolazione si ferma e il profilo non riparte da solo."))return;
+ post("/api/profile/stop").then(refresh).catch(e=>toast(e.message))};
 $("bpause").onclick=()=>post("/api/profile/pause").then(refresh).catch(e=>toast(e.message));
 $("bresume").onclick=()=>post("/api/profile/resume").then(refresh).catch(e=>toast(e.message));
-$("bskip").onclick=()=>post("/api/profile/skip").then(refresh).catch(e=>toast(e.message));
+$("bskip").onclick=()=>{if(!confirm("Saltare lo step in corso e passare al successivo?"))return;
+ post("/api/profile/skip").then(refresh).catch(e=>toast(e.message))};
 $("bovr").onclick=()=>{const v=parseFloat($("ovr").value);
  if(isNaN(v))return toast("valore mancante");
  post("/api/setpoint",{value:v}).then(refresh).catch(e=>toast(e.message))};
@@ -867,9 +950,17 @@ function renderFerment(){
   if(win.length>=2){let lo=1e9,hi=-1e9;win.forEach(p=>{if(p.g<lo)lo=p.g;if(p.g>hi)hi=p.g});stable=hi-lo}
  }
  const ptScale=unit==='plato'?1:1000;
+ // 3.16.0: andamento calcolato dalla scheda (medie orarie, 24-48 h): meno sensibile al
+ // rumore del densimetro del confronto fra punti del grafico, che resta come riserva.
+ const tr=g&&g.trend;
+ if(tr&&tr.perDay!==undefined)rate=-(+tr.perDay);
  $("ferm_rate").textContent=rate!==null?(rate*ptScale).toFixed(unit==='plato'?2:1):'--';
  const stTh=unit==='plato'?0.2:0.001;
- $("ferm_stab").textContent=stable!==null?(stable<=stTh?'densità stabile ✓':'in calo'):' ';
+ let stab=stable!==null?(stable<=stTh?'densità stabile ✓':'in calo'):' ';
+ if(tr&&tr.state)stab=["","fermentazione attiva","rallenta","densità ferma da 48 h"][tr.state]||stab;
+ if(tr&&tr.done)stab='FERMENTAZIONE FINITA ✓';
+ if(tr&&tr.stuck)stab='FERMA SOPRA L\'ATTESO?';
+ $("ferm_stab").textContent=stab;
  if(g&&g.has){
   let s='iSpindel: '+(g.temp!==undefined?(+g.temp).toFixed(1)+' °C':'—');
   if(g.angle!==undefined)s+=' · angolo '+(+g.angle).toFixed(1)+'°';
@@ -890,9 +981,7 @@ $("bog_reset").onclick=()=>post("/api/gravity/og",{og:0})
 document.querySelectorAll("#ranges button").forEach(b=>b.onclick=()=>{
  document.querySelectorAll("#ranges button").forEach(x=>x.classList.remove("on"));
  b.classList.add("on");rangeH=+b.dataset.h;
- // Il CSV e' un link diretto: non passa da api(), quindi lo scoping per camera va
- // applicato qui a mano, altrimenti scaricherebbe sempre il registro della camera 1.
- $("csv").href=chPath("/api/log.csv?hours="+rangeH);loadLog()});
+ $("csv").href="/api/log.csv?hours="+rangeH;loadLog()});
 addEventListener("resize",()=>drawCharts());
 
 // ---- profilo ----
@@ -905,6 +994,29 @@ const isPlato=()=>((ST&&ST.gravity&&ST.gravity.unit)==='plato');
 // di un mosto. Serve un fattore solo, usato sia per le bande sia per i default.
 const SG2P=250;
 const sgToPlato=sg=>Math.round((259-259/sg)*100)/100;
+const platoToSg=p=>Math.round(259/(259-p)*10000)/10000;
+const unitaScheda=()=>isPlato()?"plato":"sg";
+// Step scritti in un'unità di densità diversa da quella della scheda: vanno convertite la
+// soglia degli step "densità sotto" (un valore assoluto) e la banda di stabilità (una
+// differenza). Senza, 1.010 letto come °Plato sarebbe un cancello che non si chiude mai.
+function convertSteps(steps,da){
+ const a=unitaScheda();
+ if(!da||da===a)return steps;
+ return steps.map(s=>{const r=Object.assign({},s);
+  const sotto=(+r.gravityMode||0)===0&&r.gravityTarget!==undefined;
+  if(da==="sg"&&a==="plato"){
+   if(r.stableBand!==undefined)r.stableBand=Math.round(r.stableBand*SG2P*1000)/1000;
+   if(sotto&&r.gravityTarget>0.9&&r.gravityTarget<1.3)r.gravityTarget=sgToPlato(+r.gravityTarget);
+  }else if(da==="plato"&&a==="sg"){
+   if(r.stableBand!==undefined)r.stableBand=Math.round(r.stableBand/SG2P*10000)/10000;
+   if(sotto&&r.gravityTarget>-1&&r.gravityTarget<45)r.gravityTarget=platoToSg(+r.gravityTarget);
+  }
+  return r})}
+// Scarica un oggetto come file JSON.
+function scaricaJson(obj,nome){const a=document.createElement("a");
+ a.href=URL.createObjectURL(new Blob([JSON.stringify(obj,null,1)],{type:"application/json"}));
+ a.download=nome;document.body.appendChild(a);a.click();a.remove();
+ setTimeout(()=>URL.revokeObjectURL(a.href),5000)}
 const defBand=()=>(isPlato()?0.002*SG2P:0.002);
 // Anche la soglia di default va nell'unità configurata: 1.010 letto come 1,01 °Plato
 // sarebbe un cancello che nessuna birra raggiunge, e lo step non avanzerebbe mai.
@@ -918,7 +1030,8 @@ function normStep(s){s=s||{};return{
  gravityTarget:+s.gravityTarget||defTarget(),
  gravityMode:[0,1,2].indexOf(+s.gravityMode)>=0?+s.gravityMode:0,
  maxDurationSec:+s.maxDurationSec||0,stableBand:+s.stableBand||defBand(),
- stableHours:+s.stableHours||48,allowHeat:s.allowHeat!==false,allowCool:s.allowCool!==false}}
+ stableHours:+s.stableHours||48,allowHeat:s.allowHeat!==false,allowCool:s.allowCool!==false,
+ waitTarget:s.waitTarget===true,confirm:s.confirm===true}}
 function stepRow(s,i){
  const d=document.createElement("div");d.className="step";
  const gm=String(s.gravityMode||0);
@@ -929,6 +1042,8 @@ function stepRow(s,i){
   '<label class="f">target °C<input type="number" step="any" class="s_tg" value="'+s.target+'"></label>'+
   '<label class="f f_dur">durata (h)<input type="number" step="0.5" class="s_du" value="'+
    (s.durationSec/3600||0)+'"></label>'+
+  '<label class="f f_wait">tempo<span><label><input type="checkbox" class="s_wt"'+(s.waitTarget?" checked":"")+
+   '> parte all\'arrivo in temperatura</label></span></label>'+
   '<label class="f f_from">da °C<span><select class="s_fc"><option value="1"'+
    (s.fromCurrent?" selected":"")+'>temp. attuale</option><option value="0"'+
    (s.fromCurrent?"":" selected")+'>valore:</option></select>'+
@@ -947,9 +1062,12 @@ function stepRow(s,i){
    '<label><input type="checkbox" class="s_nh"'+(s.allowHeat===false?" checked":"")+'> senza caldo</label> '+
    '<label><input type="checkbox" class="s_nc"'+(s.allowCool===false?" checked":"")+'> senza freddo</label>'+
   '</span></label>'+
+  '<label class="f">fine step<span><label><input type="checkbox" class="s_cf"'+(s.confirm?" checked":"")+
+   '> aspetta la mia conferma</label></span></label>'+
   '<button class="b sec s_del">×</button>';
  const upd=()=>{const ty=d.querySelector(".s_ty").value,g=d.querySelector(".s_gm").value;
   d.querySelector(".f_dur").style.display=(ty==="fixed"||ty==="ramp_time")?"":"none";
+  d.querySelector(".f_wait").style.display=ty==="fixed"?"":"none";
   d.querySelector(".f_from").style.display=ty==="ramp_time"?"":"none";
   d.querySelector(".f_rate").style.display=ty==="ramp_rate"?"":"none";
   d.querySelector(".f_gmode").style.display=ty==="gravity"?"":"none";
@@ -978,16 +1096,18 @@ function collectSteps(){const steps=[];
   stableBand:+d.querySelector(".s_sb").value,
   stableHours:+d.querySelector(".s_sh").value,
   allowHeat:!d.querySelector(".s_nh").checked,
-  allowCool:!d.querySelector(".s_nc").checked})});
+  allowCool:!d.querySelector(".s_nc").checked,
+  waitTarget:d.querySelector(".s_ty").value==="fixed"&&d.querySelector(".s_wt").checked,
+  confirm:d.querySelector(".s_cf").checked})});
  return steps}
 function describeSteps(steps){
  const en=(steps||[]).filter(s=>s.enabled);
  if(!en.length)return"nessuno step attivo";
  let days=0,grav=false;
  const parts=en.map(s=>{
-  const act=(s.allowHeat===false?" ∅caldo":"")+(s.allowCool===false?" ∅freddo":"");
+  const act=(s.allowHeat===false?" ∅caldo":"")+(s.allowCool===false?" ∅freddo":"")+(s.confirm?" ✋conferma":"");
   if(s.type==="fixed"){days+=s.durationSec/86400;
-   return s.target+"° × "+(s.durationSec/86400).toFixed(1)+" g"+act}
+   return s.target+"° × "+(s.durationSec/86400).toFixed(1)+" g"+(s.waitTarget?" dall'arrivo":"")+act}
   if(s.type==="ramp_time"){days+=s.durationSec/86400;
    return"rampa→"+s.target+"° in "+(s.durationSec/86400).toFixed(1)+" g"+act}
   if(s.type==="ramp_rate")return"rampa "+(+s.degPerHour).toFixed(3).replace(/0+$/,"").replace(/\.$/,"")+" °/h→"+s.target+"°"+act;
@@ -1035,8 +1155,32 @@ function durTxt(sec){
 }
 // Riquadro dello step in corso: cosa sta facendo, cosa lo fa avanzare, cosa viene dopo,
 // e a che punto è il profilo — sia rispetto al piano sia rispetto al tempo trascorso.
+// Ore e minuti di una stima in minuti, con l'orario d'arrivo.
+function etaTxt(min){const h=Math.floor(min/60),m=min%60,at=new Date(Date.now()+min*60000);
+ return (h?h+" h "+m+" min":m+" min")+" (verso le "+at.toLocaleString("it-IT",
+  {day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})+")"}
+// Cold crash in corso: discesa verso il target, stima d'arrivo, poi mantenimento.
+function renderCrash(box){
+ const C=ST.crash,t=ST.temps&&ST.temps[0];
+ const ora=(t&&t.valid)?(+t.c).toFixed(1)+" °C":"--";
+ if(C.reachedEpoch){
+  box.innerHTML='<div class="rc"><div class="now"><b>Cold crash a '+(+C.targetC).toFixed(1)+
+   ' °C: raggiunto</b></div><div class="muted">mosto '+ora+' · temperatura mantenuta finché '+
+   'non fermi il profilo, con il caldo disattivato (si riaccende solo come antigelo).</div></div>';
+  return}
+ let eta="stima non disponibile (il mosto non sta scendendo)";
+ if(C.etaMin!==undefined)eta="arrivo stimato tra "+etaTxt(+C.etaMin)+
+  (C.etaMeasured?", dalla discesa reale":", sulla velocità programmata");
+ const fin=+C.windowH>=1?' · nelle ultime '+(+C.windowH).toFixed(0)+' h è sceso di '+
+  (+C.dropC).toFixed(1).replace(".",",")+' °C':'';
+ box.innerHTML='<div class="rc"><div class="now"><b>Cold crash verso '+(+C.targetC).toFixed(1)+
+  ' °C</b> · mosto '+ora+'</div><div class="muted">'+eta+fin+' · discesa programmata '+gradi6h(+(C.cph||0.5))+
+  ' °C ogni 6 ore, allarme sotto '+(+C.minDropC).toFixed(2).replace(/0$/,"").replace(".",",")+' °C in 6 ore'+
+  (C.slow?' · <b style="color:var(--crit)">DISCESA TROPPO LENTA</b>':'')+'</div></div>';
+}
 function renderRun(){
  const box=$("runcard");
+ if(ST&&ST.mode===2&&ST.crash){renderCrash(box);return}
  if(!ST||ST.mode!==2||!RUNPROF||!RUNPROF.steps||!ST.profile){box.innerHTML="";return}
  const P=ST.profile,now=(ST.time&&ST.time.epoch)||0;
  if(P.waitingDelayedStart){
@@ -1073,7 +1217,9 @@ function renderRun(){
   if(d===null){if(i>=idx)ignotoAvanti=true}else tot+=d;
   temp=en[i].target;
  }
- const inStep=(ref&&P.stepStartEpoch)?Math.max(0,ref-P.stepStartEpoch):0;
+ // In attesa del target il tempo dello step non e' ancora partito: niente avanzamento.
+ const attesa=(ref&&P.stepStartEpoch)?Math.max(0,ref-P.stepStartEpoch):0;
+ const inStep=P.waitingTarget?0:attesa;
  const nomCur=nom[idx];
  const fatto=nom.slice(0,idx).reduce((a,b)=>a+(b||0),0)+
   (nomCur===null?0:Math.min(inStep,nomCur));
@@ -1089,7 +1235,12 @@ function renderRun(){
 
  // che cosa manca perché lo step avanzi
  let manca="";
- if(cur.type==="gravity"){
+ if(P.waitingConfirm){
+  manca='<b style="color:var(--warn)">lo step è finito e aspetta la tua conferma</b> — premi «Conferma e prosegui»';
+ }else if(P.waitingTarget){
+  manca="il tempo dello step («"+durTxt(cur.durationSec)+"») parte quando il mosto arriva a "+
+   (+cur.target).toFixed(1)+" °C · in attesa da "+durTxt(attesa)+" (al massimo 24 h, poi parte comunque)";
+ }else if(cur.type==="gravity"){
   if(!P.hasGravity&&!cur.maxDurationSec)
    manca='<b style="color:var(--crit)">nessun densimetro e nessun limite di durata: '+
     'questo step non avanzerà mai</b> — imposta un limite nel profilo oppure usa «Salta step»';
@@ -1137,7 +1288,9 @@ function planPoints(){
  if(!ST.profile.stepStartEpoch||ST.profile.completed||ST.profile.waitingDelayedStart)return null;
  if(ST.profile.paused)return null;  // in pausa la timeline trasla alla ripresa: piano non attendibile
  const steps=RUNPROF.steps;
- let e=ST.profile.stepStartEpoch,cur=ST.profile.stepStartTemp,gravAt=null;
+ // In attesa del target lo step corrente parte "adesso" (il suo tempo non conta ancora).
+ let e=ST.profile.waitingTarget?((ST.time&&ST.time.epoch)||ST.profile.stepStartEpoch):ST.profile.stepStartEpoch,
+  cur=ST.profile.stepStartTemp,gravAt=null;
  const pts=[];
  for(let i=ST.profile.stepIdx;i<steps.length;i++){
   const s=steps[i];if(!s.enabled)continue;
@@ -1792,11 +1945,9 @@ $("bsaveprof").onclick=async()=>{
  catch(e){toast(e.message)}};
 $("bexport").onclick=()=>{
  const name=$("profname").value.trim()||"profilo";
- const blob=new Blob([JSON.stringify({name:name,steps:collectSteps()},null,1)],
-  {type:"application/json"});
- const a=document.createElement("a");
- a.href=URL.createObjectURL(blob);a.download=name.replace(/[^\w\- ]/g,"_")+".json";
- a.click();URL.revokeObjectURL(a.href)};
+ // L'unità di densità viaggia con il file: su una scheda in °Plato un profilo in SG va convertito.
+ scaricaJson({name:name,unit:unitaScheda(),schema:1,steps:collectSteps()},
+  name.replace(/[^\w\- ]/g,"_")+".json")};
 $("bimport").onclick=()=>$("fimport").click();
 $("fimport").onchange=()=>{const f=$("fimport").files[0];if(!f)return;
  const r=new FileReader();
@@ -1804,12 +1955,53 @@ $("fimport").onchange=()=>{const f=$("fimport").files[0];if(!f)return;
   if(!Array.isArray(p.steps))throw new Error("formato non valido");
   if(p.name)$("profname").value=tagliaByte(String(p.name),32);
   const box=$("steps");box.innerHTML="";
-  p.steps.slice(0,12).forEach((s,i)=>box.appendChild(stepRow(normStep(s),i)));
+  convertSteps(p.steps.slice(0,12),p.unit).forEach((s,i)=>box.appendChild(stepRow(normStep(s),i)));
    if(p.steps.length>12)toast("attenzione: scartati "+(p.steps.length-12)+
     " step oltre il dodicesimo (limite del firmware)");
-  updSummary();toast("importato: controlla e premi Salva")}
+  updSummary();
+  const conDensita=p.steps.some(s=>s&&s.type==="gravity");
+  toast(!p.unit&&conDensita?"importato. Il file non dice l'unità di densità: controlla le soglie degli step a densità, poi Salva":
+   p.unit&&p.unit!==unitaScheda()?"importato e convertito da "+(p.unit==="sg"?"SG":"°Plato")+": controlla e premi Salva":
+   "importato: controlla e premi Salva")}
   catch(e){toast("file non valido: "+e.message)}};
  r.readAsText(f);$("fimport").value=""};
+// Libreria intera in un file: i profili come la scheda li restituisce, con l'unità di densità.
+$("blibexp").onclick=async()=>{
+ try{const lib=(await api("/api/profiles")).profiles||[];
+  if(!lib.length)return toast("la libreria è vuota");
+  const out=[];
+  for(const it of lib){const p=await api("/api/profiles/"+it.id);out.push({name:p.name||it.name,steps:p.steps||[]})}
+  const d=new Date().toISOString();
+  scaricaJson({axhthermLibrary:1,unit:unitaScheda(),date:d,host:ST?ST.host:"",profiles:out},
+   "axhtherm-libreria-"+d.slice(0,10)+".json");
+  toast(out.length+" profili nel file")}
+ catch(e){toast(e.message)}};
+$("blibimp").onclick=()=>$("flibimp").click();
+$("flibimp").onchange=async()=>{const f=$("flibimp").files[0];$("flibimp").value="";if(!f)return;
+ let doc;try{doc=JSON.parse(await f.text())}catch(e){return toast("il file non è un JSON valido")}
+ if(!doc||!doc.axhthermLibrary||!Array.isArray(doc.profiles))return toast("non è una libreria di AxHTherm");
+ try{await loadLibrary()}catch(e){return toast(e.message)}
+ if(!LIBOK)return toast("elenco profili non aggiornato: riprova");
+ if(!confirm("Ripristinare "+doc.profiles.length+" profili dal file?\n\nI profili con un nome già "+
+  "presente in libreria vengono saltati; quelli oltre il limite di 20 anche."+
+  (doc.unit&&doc.unit!==unitaScheda()?"\n\nIl file è in "+(doc.unit==="sg"?"SG":"°Plato")+
+   ": le soglie di densità vengono convertite.":"")))return;
+ let ok=0,dup=0,pieni=0,err=0,tagliati=0;
+ const senzaUnita=!doc.unit&&doc.profiles.some(p=>p&&Array.isArray(p.steps)&&p.steps.some(s=>s&&s.type==="gravity"));
+ for(const p of doc.profiles){
+  const nome=tagliaByte(String((p&&p.name)||"profilo"),32);
+  if(!p||!Array.isArray(p.steps)||!p.steps.length){err++;continue}
+  if(LIB.some(x=>x.name.toLowerCase()===nome.toLowerCase())){dup++;continue}
+  const id=freeLibId();if(!id){pieni++;continue}
+  if(p.steps.length>12)tagliati++;
+  try{await put("/api/profiles/"+id,{name:nome,steps:convertSteps(p.steps.slice(0,12),doc.unit).map(normStep)});
+   LIB.push({id:id,name:nome});ok++}
+  catch(e){err++}
+ }
+ await loadLibrary();
+ toast("ripristinati "+ok+(dup?", "+dup+" già presenti":"")+(pieni?", "+pieni+" oltre il limite di 20":"")+
+  (err?", "+err+" non validi":"")+(tagliati?", "+tagliati+" ridotti a 12 step":"")+
+  (senzaUnita?". Il file non dice l'unità di densità: controlla le soglie degli step a densità":""))};
 $("steps").addEventListener("input",updSummary);
 $("steps").addEventListener("change",updSummary);
 
@@ -1917,18 +2109,15 @@ $("cal_g").addEventListener("input",calibPreview);
 $("cal_calt").addEventListener("input",calibPreview);
 // Elenco dei densimetri visti dal termostato, l'ultimo ricevuto da /api/calib.
 let DENSLIST=[];
-// Popola le tendine di scelta del densimetro, UNA PER CAMERA (D7), con gli strumenti
-// realmente visti. Rispetta la scelta gia' presente nella tendina: cosi' un aggiornamento
-// di /api/calib mentre l'utente sta modificando le impostazioni non gliela cambia sotto.
+// Popola la tendina di scelta del densimetro con gli strumenti realmente visti. Rispetta
+// la scelta gia' presente: cosi' un aggiornamento di /api/calib mentre l'utente sta
+// modificando le impostazioni non gliela cambia sotto.
 function calibDevices(list){
  if(list)DENSLIST=list;
  document.querySelectorAll("select.densSel").forEach(sel=>{
   const attivo=sel.dataset.attivo||"";
   const scelto=sel.value||attivo||"";
-  const vuoto=sel.dataset.ch==="0"
-   ?'(qualsiasi: il primo che trasmette)'
-   :'(nessuno: profili a densità non avviabili)';
-  let html='<option value="">'+vuoto+'</option>';
+  let html='<option value="">(qualsiasi: il primo che trasmette)</option>';
   const nomi=[];
   DENSLIST.forEach(d=>{
    if(!d.name)return;
@@ -1945,18 +2134,15 @@ function calibDevices(list){
   if(sel.value!==scelto&&attivo)sel.value=attivo;
  });
 }
-// Costruisce una riga per camera: densimetro assegnato + sua taratura.
-// A una sola camera l'aspetto e' quello di sempre, senza intestazioni inutili.
-function densRows(cams){
+// Densimetro assegnato + sua taratura (c = {densimetro, correzione}).
+function densRow(c){
  const box=$("c_dens");
  if(!box)return;
- const n=cams.length;
- box.innerHTML=cams.map((c,i)=>
-  '<label class="f">Densimetro'+(n>1?" — "+esc(c.label||("Camera "+(i+1))):" per la fermentazione")+
-  '<select class="densSel" id="c_dev_'+i+'" data-ch="'+i+'" data-attivo="'+esc(c.densimetro||"")+'"></select></label>'+
-  '<label class="f">Correzione densità'+(n>1?" — "+esc(c.label||("Camera "+(i+1))):"")+
-  '<input type="number" step="0.001" id="c_corr_'+i+'" value="'+
-  (c.correzione!==undefined&&c.correzione!==null?Number(c.correzione):0)+'"></label>').join("");
+ box.innerHTML='<label class="f">Densimetro per la fermentazione'+
+  '<select class="densSel" id="c_dev_0" data-attivo="'+esc(c.densimetro||"")+'"></select></label>'+
+  '<label class="f">Correzione densità'+
+  '<input type="number" step="0.001" id="c_corr_0" value="'+
+  (c.correzione!==undefined&&c.correzione!==null?Number(c.correzione):0)+'"></label>';
  calibDevices(null);
 }
 function calibRender(){
@@ -2040,7 +2226,7 @@ $("cal_dip").onclick=async()=>{
   CALDIP=+d.readingEpoch||0;
   toast(CALDIP?"attendo la prossima trasmissione":"nessuna lettura: attendo la prima");
   if(CALTIMER)clearInterval(CALTIMER);
-  CALTIMER=setInterval(calibLoad,30000);   // controlla da solo, senza far attendere l'utente
+  CALTIMER=setInterval(()=>{if(!document.hidden)calibLoad()},30000);   // controlla da solo, senza far attendere l'utente
   calibLoad();
  }catch(e){toast(e.message)}};
 $("cal_add").onclick=async()=>{
@@ -2096,12 +2282,10 @@ async function renderProbes(){
     (s.c!==undefined?" · "+s.c+" °C":"")+"</option>")});
   if(p.id&&!seen.has(p.id))
    opts.push('<option value="'+esc(p.id)+'" selected>'+esc(p.id)+" (non rilevata!)</option>");
-  // Il RUOLO di una sonda non e' piu' implicito nel suo indice assoluto: appartiene alla
-  // camera. Il firmware assegna alla camera k le sonde [k*3, k*3+1, k*3+2], con la prima
-  // di controllo. A camera singola l'etichetta resta identica a prima, senza prefisso.
-  const nCam=Math.max(1,Math.ceil(CFG.probes.length/3));
-  const cam=Math.floor(i/3)+1,ruolo=i%3;
-  const nome=(ruolo===0?"controllo (mosto)":"ausiliaria "+ruolo)+(nCam>1?" — camera "+cam:"");
+  const ruolo=i%3;
+  // Ruoli fissi: la seconda sonda e' l'aria della camera (limiti, frigo incollato), la
+  // terza la stanza.
+  const nome=ruolo===0?"controllo (mosto)":ruolo===1?"camera (aria)":"ambiente (stanza)";
   d.innerHTML='<label class="f">'+nome+
    '<select class="p_id">'+opts.join("")+"</select></label>"+
    '<label class="f">offset °C<input type="number" step="any" class="p_of" value="'+p.offset+'"></label>'+
@@ -2132,15 +2316,21 @@ async function loadConfig(){try{
  $("c_cut").value=c.control.cutAbove;$("c_rest").value=c.control.compressorRestMin;
  $("c_minon").value=c.control.compressorMinOnSec;$("c_minst").value=c.control.minStateSec;
  $("c_minsw").value=c.control.minSwitchSec;
+ if(c.safety){$("c_hmax").value=c.safety.heatMaxOnH;$("c_hstuck").value=c.safety.heatStuckMin;}
+ if(c.control.airMinC!==undefined){$("c_airmin").value=c.control.airMinC;
+  $("c_airbelow").value=c.control.airBelowSpC;$("c_airabove").value=c.control.airAboveSpC;}
  $("c_stale").value=c.ispindel.staleMin;
- $("c_batt").value=c.ispindel.batteryAlert;$("c_gunit").value=c.ispindel.unit;
- $("c_itok").value="";
- // Una riga per camera. Se la config non porta chambers[] (firmware precedente) si
- // ricade sui campi singoli di ispindel, che valgono per la camera 1.
- densRows((c.chambers&&c.chambers.length)?c.chambers
-  :[{label:"",densimetro:c.ispindel.device||"",correzione:c.ispindel.correction||0}]);
+ $("c_batt").value=c.ispindel.batteryAlert;$("c_stuck").checked=c.ispindel.stuckAlert!==false;$("c_gunit").value=c.ispindel.unit;
+ $("c_itok").value="";$("c_itok").type="password";  // dopo «Genera codice» era in chiaro
+ // chambers[0] e' la fonte di verita' del firmware; ispindel.* e' il suo specchio.
+ densRow((c.chambers&&c.chambers.length)?c.chambers[0]
+  :{densimetro:c.ispindel.device||"",correzione:c.ispindel.correction||0});
  $("c_oled").checked=c.display.enabled;$("c_odrv").value=c.display.driver;
  $("c_oaddr").value=c.display.address;$("c_oflip").checked=c.display.flip;
+ if(c.fan){$("c_fanrel").value=c.fan.relay;$("c_fanmode").value=c.fan.mode;
+  $("c_fanpost").value=c.fan.postRunSec/60;$("c_fancon").value=c.fan.cycleOnMin;$("c_fanevery").value=c.fan.cycleEveryMin}
+ {const b=c.display.brightness||207,s=$("c_obri");
+  if(![...s.options].some(o=>+o.value===b))s.add(new Option(b,b));s.value=b}
  $("c_lsm").value=c.log.sampleMin;$("c_lrd").value=c.log.retentionDays;
  $("c_mq").checked=c.mqtt.enabled;$("c_mqh").value=c.mqtt.host;$("c_mqp").value=c.mqtt.port;
  $("c_mqu").value=c.mqtt.user;$("c_mqt").value=c.mqtt.baseTopic;
@@ -2149,6 +2339,8 @@ async function loadConfig(){try{
 }catch(e){toast(e.message)}}
 $("bsavecfg").onclick=async()=>{
  const v=id=>$(id).value, n=id=>+$(id).value, k=id=>$(id).checked;
+ // Campo vuoto = non inviato (resta com'era), invece di diventare 0.
+ const no=id=>{const s=$(id).value;return s===""?undefined:+s};
  const sec=id=>{const s=$(id).value;return s?s:"***"};
  const probes=[];document.querySelectorAll("#probecfg .row").forEach(d=>probes.push({
   id:d.querySelector(".p_id").value.trim(),offset:+d.querySelector(".p_of").value,
@@ -2163,38 +2355,70 @@ $("bsavecfg").onclick=async()=>{
   control:{usePid:k("c_pid"),predictive:k("c_pred"),tolerance:n("c_tol"),kp:n("c_kp"),ki:n("c_ki"),kd:n("c_kd"),
    windowMs:n("c_win"),fullPowerBelow:n("c_fpb"),cutAbove:n("c_cut"),
    compressorRestMin:n("c_rest"),compressorMinOnSec:n("c_minon"),
-   minStateSec:n("c_minst"),minSwitchSec:n("c_minsw")},
-  ispindel:{staleMin:n("c_stale"),batteryAlert:n("c_batt"),
-   unit:v("c_gunit"),token:sec("c_itok")},
-  display:{enabled:k("c_oled"),driver:v("c_odrv"),address:n("c_oaddr"),flip:k("c_oflip")},
+   minStateSec:n("c_minst"),minSwitchSec:n("c_minsw"),
+   airMinC:no("c_airmin"),airBelowSpC:no("c_airbelow"),airAboveSpC:no("c_airabove")},
+  safety:{heatMaxOnH:n("c_hmax"),heatStuckMin:n("c_hstuck")},
+  ispindel:{staleMin:n("c_stale"),batteryAlert:n("c_batt"),stuckAlert:k("c_stuck"),
+   unit:v("c_gunit"),token:TOKCLEAR?"":sec("c_itok")},
+  display:{enabled:k("c_oled"),driver:v("c_odrv"),address:n("c_oaddr"),flip:k("c_oflip"),brightness:n("c_obri")},
+  fan:{relay:n("c_fanrel"),mode:n("c_fanmode"),postRunSec:Math.round(n("c_fanpost")*60),
+   cycleOnMin:n("c_fancon"),cycleEveryMin:n("c_fanevery")},
   log:{sampleMin:n("c_lsm"),retentionDays:n("c_lrd")},
   mqtt:{enabled:k("c_mq"),host:v("c_mqh"),port:n("c_mqp"),user:v("c_mqu"),
    pass:sec("c_mqpw"),baseTopic:v("c_mqt"),haDiscovery:k("c_mqha")},
   ota:{enabled:k("c_ota")}};
- // Densimetro e taratura per camera. Si inviano SOLO se le righe sono state costruite:
- // un invio con le tendine non popolate cancellerebbe le assegnazioni (il firmware
- // distingue "chiave assente" da "stringa vuota", e la stringa vuota DISASSEGNA).
- {const righe=document.querySelectorAll("select.densSel");
-  if(righe.length){
-   body.chambers=[];
-   righe.forEach((sel,i)=>{
-    const c=$("c_corr_"+i);
-    body.chambers.push({densimetro:sel.value.trim(),
-                        correzione:c?Number(c.value)||0:0});
-   });
-  }}
+ // La password attuale viaggia solo quando serve: per cambiarla.
+ if($("c_uipass").value)body.system.currentPassword=$("c_curpass").value;
+ // Densimetro e taratura. Si inviano SOLO se la riga e' stata costruita: un invio con
+ // la tendina non popolata cancellerebbe l'assegnazione (il firmware distingue "chiave
+ // assente" da "stringa vuota", e la stringa vuota DISASSEGNA).
+ {const sel=$("c_dev_0");
+  if(sel){const c=$("c_corr_0");
+   body.chambers=[{densimetro:sel.value.trim(),correzione:c?Number(c.value)||0:0}];}}
  try{const r=await put("/api/config",body);
-  if(CFG&&r&&r.configRev!==undefined)CFG.configRev=r.configRev;  // allinea la revisione: niente 409 falso al prossimo salvataggio
-  toast(r.reboot?"Salvato. Il dispositivo si riavvia.":"Salvato.")}
+  $("c_uipass").value="";$("c_curpass").value="";  // mai rispedire una password gia' salvata
+  TOKCLEAR=false;
+  afterSave(r)}
  catch(e){toast(e.message);
   // Conflitto di revisione (un altro accesso ha scritto, es. una taratura): ricarico i
   // valori aggiornati così l'utente non risalva sopra dati vecchi.
   if(/cambiata|ricarica/i.test(e.message||""))loadConfig();}};
 
+// Esito di un salvataggio della configurazione (dal modulo o da un ripristino).
+function afterSave(r,noReboot){
+ if(CFG&&r&&r.configRev!==undefined)CFG.configRev=r.configRev;  // allinea la revisione: niente 409 falso al prossimo salvataggio
+ let corr=r&&r.corrected&&r.corrected.length?" Riportati nei limiti: "+r.corrected.join(", ")+".":"";
+ // Sonda cambiata in una posizione: la sua taratura e' stata spostata o azzerata.
+ if(r&&r.probeOffsetsMoved&&r.probeOffsetsMoved.length)
+  corr+=" Sonda cambiata (posizione "+r.probeOffsetsMoved.join(", ")+"): la taratura segue la sonda, una sonda nuova riparte da zero.";
+ // Valori cambiati dal firmware: si rilegge la configurazione cosi' il modulo mostra cio'
+ // che e' davvero in uso.
+ if(corr)loadConfig();
+ toast("Salvato."+corr);
+ if(r&&r.rebootNeeded&&!noReboot)askReboot("Le impostazioni di rete, display, MQTT o orologio diventano attive al riavvio.")}
+// Codice casuale per i densimetri: 16 caratteri dal generatore del browser, mostrati in
+// chiaro perché vanno copiati nel densimetro.
+$("bgentok").onclick=()=>{const a="abcdefghijkmnpqrstuvwxyz23456789",r=new Uint8Array(16);
+ crypto.getRandomValues(r);const k=$("c_itok");k.value=Array.from(r,x=>a[x%a.length]).join("");
+ k.type="text";TOKCLEAR=false;toast("Codice generato: copialo nel densimetro, poi salva")};
+// Il campo vuoto vuol dire "invariato" (i segreti tornano mascherati): togliere il codice
+// e' un'azione a parte, applicata al prossimo salvataggio.
+let TOKCLEAR=false;
+$("bdeltok").onclick=()=>{TOKCLEAR=true;$("c_itok").value="";
+ toast("Il codice verrà tolto al salvataggio: il densimetro potrà inviare senza")};
+$("brbnow").onclick=()=>askReboot("Le impostazioni salvate diventano attive.");
+// Il riavvio si propone, non si impone: a regolazione in corso spegne i relè.
+function askReboot(why){
+ let m=why+"\n\nRiavviare adesso?";
+ if(ST&&ST.outputs&&ST.outputs.armed&&ST.mode!==0)
+  m+="\n\nC'è una regolazione in corso: per una decina di secondi i relè restano spenti e la pausa del compressore riparte da capo.";
+ m+="\n\nSe rispondi no, le impostazioni restano salvate e si attivano al prossimo riavvio (pulsante «Riavvia ora» nella dashboard).";
+ if(confirm(m))post("/api/reboot").then(()=>toast("riavvio in corso")).catch(e=>toast(e.message))}
+
 // ---- sistema ----
 function fillRelaySelects(){const opts='<option value="0">nessuno</option>'+
  [1,2,3,4,5,6,7,8].map(n=>'<option value="'+n+'">REL'+n+"</option>").join("");
- $("a_cool").innerHTML=opts;$("a_heat").innerHTML=opts;
+ $("a_cool").innerHTML=opts;$("a_heat").innerHTML=opts;$("c_fanrel").innerHTML=opts;
  const rb=$("relbtns");rb.innerHTML="";
  for(let n=1;n<=8;n++){const g=document.createElement("span");
   g.innerHTML="REL"+n+' <button class="b sec" data-n="'+n+'" data-on="1">ON</button>'+
@@ -2225,6 +2449,12 @@ async function probeLoad(){
   // rigenerare le caselle despuntate cancellerebbe la scelta mentre si digita
   // la temperatura di riferimento.
   const scelte=CALSEL;
+  // Tipo dei guasti, nell'ordine di ax::ProbeFault (l'indice 0, recuperate, e' gia' nel conteggio).
+  const KIND=["","nessuna sonda risponde (linea dati a massa, bus interrotto, pull-up)",
+   "la sonda non trasmette (staccata, suo cavo o connettore)","linea a massa durante la lettura",
+   "dati corrotti (disturbi, cavo lungo, pull-up)","sonda riavviata (alimentazione)","fuori scala"];
+  const kinds=k=>{if(!k)return"";const v=[];for(let i=1;i<k.length&&i<KIND.length;i++)if(k[i])v.push(KIND[i]+" "+k[i]);
+   return v.length?'<br><span class="muted">tipo: '+v.join(", ")+'</span>':""};
   let h='<table class="tbl"><tr><th>sonda</th><th>ora</th><th>grezzo</th><th>offset</th>'+
    '<th>letture perse</th><th>episodi</th></tr>';
   PROBES.forEach(p=>{
@@ -2247,7 +2477,7 @@ async function probeLoad(){
     '<td>'+((+p.offset)>=0?'+':'')+(+p.offset).toFixed(2)+'</td>'+
     '<td style="color:'+col+'">'+(hasPct?marg.toFixed(2)+'% <span class="muted">('+
      (p.firstFail!==undefined?p.firstFail:p.badReads)+'/'+p.reads+' in '+wo+'h '+wm+'m'+
-     (p.recovered?', '+p.recovered+' recuperate al 2° tentativo':'')+')</span>':
+     (p.recovered?', '+p.recovered+' recuperate rileggendo':'')+')</span>'+kinds(p.kinds):
      '<span class="muted">nessun dato</span>')+'</td>'+
     '<td style="color:'+fcol+'">'+p.faults+
      (p.lastFaultSecAgo!==undefined?' <span class="muted">('+fmtAge(p.lastFaultSecAgo)+' fa)</span>':'')+
@@ -2260,16 +2490,22 @@ async function probeLoad(){
   // aggiornamento, e finché non si legge il motivo del reset restano indistinguibili.
   const bt=d.boots||[];
   if(bt.length){
-   const spia=r=>/watchdog|exception|unknown/i.test(r)?'var(--crit)':
+   const spia=r=>/watchdog|exception|unknown|blocco/i.test(r)?'var(--crit)':
     /power/i.test(r)?'var(--warn)':'inherit';
-   $("boot_tbl").innerHTML='<div class="muted" style="margin-bottom:4px">Ultimi riavvii</div>'+
-    '<table class="tbl"><tr><th>quando</th><th>motivo</th></tr>'+
+   // Motivo dei riavvii VOLUTI (memoria RTC) e durata della sessione che li ha preceduti.
+   const VOLUTO=["","riavvio richiesto","impostazioni salvate","aggiornamento firmware","reset di fabbrica"];
+   const dur=(s,b)=>!s?(b&&(b.e!==undefined||/watchdog|exception|blocco/i.test(b.r||''))?'< 10 s':'—'):s<120?s+' s':s<7200?Math.round(s/60)+' min':s<172800?Math.round(s/3600)+' h':Math.round(s/86400)+' g';
+   $("boot_tbl").innerHTML='<div class="muted" style="margin-bottom:4px">Ultimi riavvii'+
+    (d.bootsTotal?' ('+d.bootsTotal+' da sempre)':'')+'</div>'+
+    '<table class="tbl"><tr><th>quando</th><th>motivo</th><th>dopo</th></tr>'+
     bt.slice().reverse().map(b=>'<tr><td>'+(b.t?new Date(b.t*1000).toLocaleString():
      '<span class="muted">ora ignota</span>')+'</td>'+
-     '<td style="color:'+spia(b.r||'')+'">'+esc(b.r||'—')+'</td></tr>').join("")+'</table>'+
-    '<div class="muted">«External System» è il pulsante di reset o il flash, «Power on» un '+
-    'distacco di alimentazione, «Software/System restart» un riavvio richiesto dalla pagina. '+
-    '«Watchdog» o «Exception» indicano invece un blocco del firmware.</div>';
+     '<td style="color:'+(b.i?'inherit':spia(b.r||''))+'">'+esc(b.i?(VOLUTO[b.i]||b.r):(b.r||'—'))+
+     (b.e!==undefined?' <span class="mono muted">(eccezione '+b.x+' @0x'+(b.e>>>0).toString(16)+')</span>':'')+'</td>'+
+     '<td>'+dur(b.u,b)+'</td></tr>').join("")+'</table>'+
+    '<div class="muted">«dopo» è quanto era durata la sessione precedente. «External System» è il pulsante di reset o il flash, «Power on» un '+
+    'distacco di alimentazione, «Software/System restart» un riavvio software. '+
+    '«Watchdog», «Exception» e «Blocco software» (memoria esaurita, stack, abort) indicano invece un blocco del firmware.</div>';
   }
   // Caselle NON spuntate alla prima apertura: proporre di tarare anche una sonda
   // rimasta nel fermentatore sarebbe il default sbagliato.
@@ -2340,20 +2576,22 @@ $("bprobecal").onclick=async()=>{
 // Dopo un rilogin il ciclo automatico va riavviato: era stato fermato dal 401.
 document.addEventListener("ax-login",()=>{
  const b=document.querySelector('nav button.on');
- if(b&&b.dataset.tab==="sys"&&!PROBETIMER){probeLoad();PROBETIMER=setInterval(probeLoad,15000);}
+ if(b&&b.dataset.tab==="sys"&&!PROBETIMER){probeLoad();PROBETIMER=setInterval(()=>{if(!document.hidden)probeLoad()},15000);}
 });
 // Cold crash su richiesta: sostituisce il piano in corso con una discesa a gradini.
 // Il piano NON viene ricalcolato qui: si chiede al firmware un'anteprima e si mostra
 // quella, così la conferma non può descrivere una discesa diversa da quella eseguita.
+// Soglia dell'allarme proporzionata alla velocità: proposta metà di quanto il programma
+// scende in 6 ore, massimo due terzi (oltre, l'allarme scatterebbe con il frigo in regola).
+const gradi6h=v=>(v*6).toFixed(1).replace(".",",");
+$("cc_v").onchange=()=>{const v=+$("cc_v").value,m=$("cc_m");
+ m.max=String(Math.round(v*6*2/3*100)/100);m.value=String(v*3)};
 $("bcrash").onclick=async()=>{
- const t=parseFloat($("cc_t").value),g=parseFloat($("cc_d").value);
- if(isNaN(t)||isNaN(g))return toast("controlla temperatura e giorni");
+ const t=parseFloat($("cc_t").value),g=parseFloat($("cc_m").value),v=+$("cc_v").value;
+ if(isNaN(t)||isNaN(g))return toast("controlla temperatura e soglia");
  let p;
- try{p=await post("/api/profile/coldcrash",{targetC:t,holdDays:g,preview:true})}
+ try{p=await post("/api/profile/coldcrash",{targetC:t,minDropC:g,cph:v,preview:true})}
  catch(e){return toast(e.message)}
- const righe=(p.plan||[]).map(x=>x.type==="ramp"
-  ? " · scende a "+(+x.targetC).toFixed(1)+" °C in "+durTxt(x.sec)
-  : " · resta a "+(+x.targetC).toFixed(1)+" °C per "+durTxt(x.sec)).join("\n");
  let avvisi="";
  const P=ST&&ST.profile;
  if(ST&&ST.mode===2&&P&&!P.completed)
@@ -2364,13 +2602,15 @@ $("bcrash").onclick=async()=>{
   if(a!==null&&a<60)avvisi+="\n\nATTENZIONE: attenuazione al "+a.toFixed(0)+
    "%, la fermentazione sembra ANCORA IN CORSO. Raffreddare adesso la ferma.";
  }
- if(!confirm("Cold crash da "+(+p.fromC).toFixed(1)+" °C:\n"+righe+
-  "\n\nTotale "+(p.totalSec/86400).toFixed(1)+" giorni, con il riscaldamento "+
-  "disattivato per tutta la durata."+avvisi+
+ if(!confirm("Cold crash da "+(+p.fromC).toFixed(1)+" °C a "+(+p.targetC).toFixed(1)+" °C:\n"+
+  " · discesa di "+gradi6h(+p.cph)+" °C ogni 6 ore, circa "+durTxt(p.totalSec)+" se il frigo tiene il passo;\n"+
+  " · arrivato alla temperatura te lo segnala e la mantiene finché non fermi il profilo;\n"+
+  " · riscaldamento disattivato (si riaccende solo come antigelo);\n"+
+  " · allarme se in 6 ore scende meno di "+(+p.minDropC).toFixed(1).replace(".",",")+" °C."+avvisi+
   "\n\nNon farlo se la birra deve ancora carbonare in bottiglia, o se è una "+
   "fermentazione con Brett o batteri, che va tenuta al caldo.\n\nProcedo?"))return;
- try{const r=await post("/api/profile/coldcrash",{targetC:t,holdDays:g});
-  toast("cold crash avviato: "+((r&&r.totalSec||0)/86400).toFixed(1)+" giorni in tutto");
+ try{await post("/api/profile/coldcrash",{targetC:t,minDropC:g,cph:v});
+  toast("cold crash avviato: discesa di "+gradi6h(v)+" °C ogni 6 ore verso "+t.toFixed(1)+" °C");
   RUNPROF=null;RUNPROFKEY="";refresh()}
  catch(e){toast(e.message)}};
 $("bi2c").onclick=async()=>{try{const r=await api("/api/diag/i2c");
@@ -2378,29 +2618,165 @@ $("bi2c").onclick=async()=>{try{const r=await api("/api/diag/i2c");
  catch(e){toast(e.message)}};
 $("bow").onclick=async()=>{try{const r=await api("/api/diag/onewire");
  $("scanout").textContent="OneWire: "+(r.probes.map(p=>p.id+(p.c!==undefined?" ("+p.c+" °C)":""))
-  .join("   ")||"nessuna sonda trovata")}
- catch(e){toast(e.message)}};
+  .join("   ")||"nessuna sonda trovata. Controlla il connettore PROBE (dati, massa, alimentazione), "+
+  "il cavo e che le sonde siano DS18B20; con più sonde, prova a collegarne una sola.")}
+ catch(e){$("scanout").textContent="OneWire: scansione non riuscita ("+e.message+"). Riprova; se si ripete, "+
+  "la linea dati potrebbe essere a massa o in corto."}};
 $("bsynctime").onclick=()=>post("/api/time",{epoch:Math.floor(Date.now()/1000)})
  .then(()=>{toast("ora impostata");refresh()}).catch(e=>toast(e.message));
-$("breboot").onclick=()=>{if(confirm("Riavviare?"))post("/api/reboot").catch(()=>{})};
-$("bfactory").onclick=()=>{if(confirm("RESET DI FABBRICA: cancella configurazione, stato, profilo attivo, l'INTERA libreria profili (fino a 20 ricette), i punti di calibrazione del densimetro e il registro densimetri. Irreversibile. Confermi?"))
- post("/api/factory_reset").catch(()=>{})};
+$("breboot").onclick=()=>{if(!confirm("Riavviare?"))return;
+ post("/api/reboot").then(()=>{toast("riavvio in corso: la pagina si ricarica appena la scheda risponde");
+  waitBack($("scanout"))}).catch(e=>toast(e.message))};
+$("blogout").onclick=()=>post("/api/logout").then(()=>location.reload()).catch(()=>location.reload());
+$("bfactory").onclick=()=>{if(confirm("RESET DI FABBRICA: cancella configurazione, stato, profilo attivo, l'INTERA libreria profili (fino a 20 ricette), i punti di calibrazione del densimetro e il registro densimetri. Irreversibile.\n\nAl riavvio la scheda genera password NUOVE: le leggi dal monitor seriale (cavo USB) o dal display, se montato. Senza nessuno dei due non potrai rientrare.\n\nConfermi?")){
+ const pw=prompt("Per confermare scrivi la password attuale dell'interfaccia:");
+ if(pw===null)return;
+ post("/api/factory_reset",{currentPassword:pw}).then(()=>toast("reset in corso: leggi le password nuove dal seriale o dal display"))
+  .catch(e=>toast(e.message))}};
 $("bupload").onclick=async()=>{const f=$("fwfile").files[0];
  if(!f)return toast("scegli un file .bin");
+ const pw=$("otapw").value;
+ if(!pw)return toast("serve la password attuale dell'interfaccia");
  if(!confirm("Installare "+f.name+"? Non togliere alimentazione durante l'aggiornamento."))return;
- $("otaout").textContent="caricamento in corso…";
+ const out=$("otaout");
+ // Controllo rapido prima di inviare 700 KB: il firmware dichiara la sua lunghezza
+ // (byte 0x1010). La verifica completa, con il CRC, la fa comunque la scheda.
+ try{const h=new DataView(await f.slice(0,0x1018).arrayBuffer());
+  if(h.byteLength<0x1018||h.getUint8(0)!==0xE9||h.getUint8(0x1000)!==0xE9)
+   return out.textContent="ERRORE: non è un firmware.bin per questa scheda (un .bin.gz o un altro file?)";
+  const dich=h.getUint32(0x1010,true);
+  if(dich!==f.size)return out.textContent="ERRORE: file incompleto ("+f.size+" byte, il firmware ne dichiara "+dich+"): scaricalo o compilalo di nuovo";}
+ catch(e){return out.textContent="errore: "+e.message}
+ // Sessione scaduta: meglio scoprirlo ora che dopo l'invio (la scheda chiude la connessione).
+ try{await api("/api/status")}catch(e){return out.textContent=e.status===401?"sessione scaduta: rientra e riprova":"la scheda non risponde: "+e.message}
  const fd=new FormData();fd.append("firmware",f);
- try{const r=await fetch("/api/update",{method:"POST",body:fd});
-  const j=await r.json();
-  $("otaout").textContent=j.ok?"OK: riavvio in corso, ricarica la pagina tra 20 s":
-   "ERRORE aggiornamento";}
- catch(e){$("otaout").textContent="errore: "+e.message}};
+ const x=new XMLHttpRequest();x.open("POST","/api/update");
+ x.setRequestHeader("X-Ax-Password",pw);
+ x.upload.onprogress=e=>{if(e.lengthComputable)out.textContent="invio "+Math.round(e.loaded*100/e.total)+"%"};
+ x.upload.onload=()=>{out.textContent="verifica e installazione…"};
+ x.onload=()=>{let j={};try{j=JSON.parse(x.responseText)}catch(e){}
+  if(x.status===200&&j.ok){out.textContent="OK: riavvio in corso, la pagina si ricarica da sola";waitBack()}
+  else{if(x.status===401)$("login").style.display="block";
+   out.textContent="ERRORE: "+(j.error||("risposta HTTP "+x.status))}};
+ x.onerror=()=>{out.textContent="invio interrotto: l'aggiornamento non è stato confermato, resta il firmware attuale"};
+ x.send(fd)};
+// Dopo l'aggiornamento si aspetta che la scheda risponda di nuovo, poi si ricarica.
+function waitBack(el){const t0=Date.now();el=el||$("otaout");
+ const tick=async()=>{try{const r=await fetch("/api/status",{cache:"no-store"});
+   if(r.ok||r.status===401){location.reload();return}}catch(e){}
+  if(Date.now()-t0<90000)setTimeout(tick,3000);
+  else el.textContent="la scheda non risponde da 90 s: controlla alimentazione e rete"};
+ setTimeout(tick,8000)}
+// Backup: la configurazione come la restituisce la scheda, con le password gia' mascherate.
+$("bbackup").onclick=async()=>{try{const c=await api("/api/config");
+ const doc={axhthermBackup:1,fw:ST?ST.fw:"",host:ST?ST.host:"",chip:ST?ST.chip:"",date:new Date().toISOString(),config:c};
+ const a=document.createElement("a");
+ a.href=URL.createObjectURL(new Blob([JSON.stringify(doc,null,1)],{type:"application/json"}));
+ a.download="axhtherm-"+(doc.host||"config")+"-"+doc.date.slice(0,10)+".json";
+ document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),5000)}
+ catch(e){toast(e.message)}};
+// Ripristino: passa dal salvataggio normale, con la stessa validazione. Le password
+// mascherate ("***") lasciano quelle attuali.
+$("brestore").onclick=async()=>{const f=$("rsfile").files[0];
+ if(!f)return toast("scegli il file di backup");
+ let doc;try{doc=JSON.parse(await f.text())}catch(e){return toast("il file non è un JSON valido")}
+ const c=doc&&doc.axhthermBackup?doc.config:null;
+ if(!c||typeof c!=="object"||!c.system)return toast("non è un backup di AxHTherm");
+ let cur;try{cur=await api("/api/config")}catch(e){return toast(e.message)}
+ // Altra scheda: si riconosce dal chip (il nome si puo' cambiare); per backup senza chip, dal nome.
+ const altra=doc.chip&&ST&&ST.chip?doc.chip!==ST.chip:!!(doc.host&&ST&&ST.host&&doc.host!==ST.host);
+ // Dopo un reset di fabbrica la scheda non ha la password del WiFi, e il file non la porta.
+ const senzaWifi=!(cur.network&&cur.network.ssid)&&c.network&&c.network.ssid&&!altra;
+ let m="Ripristinare le impostazioni del backup del "+String(doc.date||"?").slice(0,10)+
+  (doc.host?" (scheda "+doc.host+")":"")+"?\n\nSostituiscono quelle attuali. Le password non sono nel file: restano quelle della scheda.";
+ if(altra)m+="\n\nIl backup viene da un'ALTRA scheda: nome, rete, display, topic MQTT e sonde di questa "+
+  "scheda restano quelli attuali. Controlla poi relè e densimetro.";
+ if(senzaWifi)m+="\n\nQuesta scheda non ha la password del WiFi (reset di fabbrica?): dopo il ripristino "+
+  "inseriscila in Impostazioni → Rete WiFi, PRIMA di riavviare.";
+ if(!confirm(m))return;
+ c.configRev=cur.configRev;  // il backup porta una revisione vecchia: senza, 409
+ // Un codice dei densimetri vuoto nel file cancellerebbe quello della scheda.
+ if(c.ispindel&&c.ispindel.token==="")c.ispindel.token="***";
+ if(altra){c.system.hostname=cur.system.hostname;c.probes=cur.probes;
+  c.network=cur.network;c.display=cur.display;
+  if(c.mqtt&&cur.mqtt)c.mqtt.baseTopic=cur.mqtt.baseTopic}
+ try{const r=await put("/api/config",c);afterSave(r,senzaWifi);loadConfig();
+  if(senzaWifi)toast("Ripristinato. Inserisci la password del WiFi in Impostazioni, salva e poi riavvia.")}
+ catch(e){toast(e.message)}};
+
+// ---- Registro eventi (3.15.0) ----
+const EVN={1:"avvio",2:"uscite armate",3:"uscite disarmate",4:"modo",5:"step",6:"allarme",
+ 7:"fine allarme",8:"caldo bloccato",9:"caldo sbloccato",10:"profilo completato",11:"pausa",
+ 12:"ripresa",13:"cold crash raggiunto",14:"configurazione salvata",15:"aggiornamento firmware",
+ 16:"salto d'orologio",17:"comando rifiutato",18:"fermentazione finita",19:"fermentazione ferma?",
+ 20:"step confermato"};
+const ALN=["sonda di controllo guasta","sonda del mosto sospetta","uscite (MCP) in errore",
+ "configurazione non valida","caldo bloccato","mosto troppo freddo","frigo non si ferma",
+ "limite assoluto di temperatura","riavvii a catena","scostamento termico","cold crash lento",
+ "scrittura su flash fallita","failsafe non attivo","failsafe: loop bloccato",
+ "sonda della camera non valida","densità stantia","rampa ferma","più densimetri",
+ "orologio inaffidabile","batteria del densimetro","fermentazione ferma?"];
+const RSTN=["accensione","watchdog hardware","eccezione","watchdog software","riavvio software",
+ "risveglio","reset esterno"];
+const INTN=["","dalla pagina o dalla seriale","per le impostazioni","dopo l'aggiornamento","reset di fabbrica"];
+const LOCKN=["","la sonda non sale","oltre il tempo massimo","salita a caldo spento","freddo inefficace"];
+const CMDN=["","setpoint ignorato (scheda ferma o profilo finito)","avvio rifiutato: profilo già in corso",
+ "avvio del profilo fallito","valore o comando non valido","niente da confermare"];
+function fmtUp(s){const d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60);
+ return d?d+"g "+h+"h":h?h+"h "+m+"m":m+"m"}
+function evText(e){let t=EVN[e.c]||("evento "+e.c);
+ switch(e.c){
+  case 1:t+=": "+(RSTN[e.a]||"causa "+e.a)+(e.b?", voluto "+(INTN[e.b]||e.b):"")+
+   (e.v>=0?" — BLOCCO del firmware (eccezione "+e.v+")":"");break;
+  case 2:t+=" (freddo "+(e.a?"REL"+e.a:"nessuno")+", caldo "+(e.b?"REL"+e.b:"nessuno")+")";break;
+  case 4:t+=": "+(["fermo","termostato","profilo"][e.a]||e.a);break;
+  case 5:t+=" "+e.a+"/"+e.b;break;
+  case 6:case 7:t+=": "+(ALN[e.a]||"#"+e.a);break;
+  case 8:t+=": "+(LOCKN[e.a]||e.a);break;
+  case 16:t+=" di "+e.v+" min";break;
+  case 17:t+=" (MQTT): "+(CMDN[e.a]||e.a);break;
+  case 18:case 19:t+=" (attenuazione "+e.a+"%)";break;
+  case 20:t=e.a?"step "+e.b+" confermato":"step "+e.b+" finito: attende la conferma";break;
+ }
+ return t}
+let EVOLD=0;
+async function evLoad(more){try{
+ const r=await api("/api/events?n=25"+(more&&EVOLD?"&before="+EVOLD:""));
+ if(!r.on){$("evlist").textContent="registro spento: la EEPROM del modulo orologio (0x50) non risponde";return}
+ if(!more)$("evlist").innerHTML="";
+ if(!r.ev.length&&!more){$("evlist").textContent="nessun evento registrato";return}
+ for(const e of r.ev){const d=document.createElement("div");
+  d.textContent="#"+e.s+"  "+(e.e?new Date(e.e*1000).toLocaleString():"ora ignota")+"  "+evText(e);
+  if(e.c===6||e.c===8)d.style.color="#c0392b";
+  $("evlist").appendChild(d);EVOLD=e.s}
+ $("bevold").style.display=EVOLD>1&&r.ev.length?"":"none"}
+ catch(e){toast(e.message)}}
+$("bevnew").onclick=()=>{EVOLD=0;evLoad(false)};
+$("bevold").onclick=()=>evLoad(true);
+// Diagnostica: tutto quello che serve a capire un problema, in un file solo. Le password non ci
+// sono: /api/config le restituisce gia' mascherate.
+$("bdiag").onclick=async()=>{try{
+ const get=async u=>{try{return await api(u)}catch(e){return {errore:e.message}}};
+ const doc={axhthermDiag:1,date:new Date().toISOString(),status:await get("/api/status"),
+  probes:await get("/api/probes"),config:await get("/api/config"),events:[]};
+ let before=0;
+ for(let i=0;i<7;i++){const r=await get("/api/events?n=40"+(before?"&before="+before:""));
+  if(!r.ev||!r.ev.length)break;
+  for(const e of r.ev)doc.events.push(Object.assign({testo:evText(e)},e));before=r.ev[r.ev.length-1].s}
+ const a=document.createElement("a");
+ a.href=URL.createObjectURL(new Blob([JSON.stringify(doc,null,1)],{type:"application/json"}));
+ a.download="axhtherm-diagnostica-"+(ST&&ST.host||"scheda")+"-"+doc.date.slice(0,10)+".json";
+ document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),5000)}
+ catch(e){toast(e.message)}};
 
 // ---- avvio ----
 fillRelaySelects();
 refresh();loadLog();loadLibrary();
-setInterval(refresh,2000);
-setInterval(loadLog,60000);
+// Ogni 3 s, e niente richieste a pagina nascosta (UX-43, 3.14.0): ogni /api/status costa
+// ~8 KB di heap transitorio alla scheda. Al ritorno sulla pagina si aggiorna subito.
+setInterval(()=>{if(!document.hidden)refresh()},3000);
+setInterval(()=>{if(!document.hidden)loadLog()},60000);
+document.addEventListener("visibilitychange",()=>{if(!document.hidden){refresh();loadLog()}});
 </script>
 </body>
 </html>

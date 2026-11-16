@@ -65,8 +65,14 @@ void ProfileEngine::resume(uint32_t now) {
   }
 }
 
+bool ProfileEngine::confirm(uint32_t now, float tempC, bool tempValid) {
+  if (s_.mode != RunMode::Profile || s_.completed || !s_.waitingConfirm) return false;
+  return skip(now, tempC, tempValid);
+}
+
 bool ProfileEngine::skip(uint32_t now, float tempC, bool tempValid) {
   if (s_.mode != RunMode::Profile || s_.completed) return false;
+  s_.waitingConfirm = false;  // saltare vale anche come conferma
   int8_t next = nextEnabled((int8_t)(s_.stepIdx + 1));
   if (next < 0) {
     s_.completed = true;  // ultimo step saltato: profilo completo, setpoint mantenuto
@@ -128,9 +134,14 @@ void ProfileEngine::enterStep(uint8_t idx, uint32_t now, float tempC, bool tempV
   s_.overrideActive = false;
   s_.completed = false;
   s_.rampReanchored = false;  // nuovo step: l'origine torna quella configurata (startC/fromCurrent)
+  s_.waitingTarget = steps_[idx].type == StepType::Fixed && steps_[idx].waitTarget;
+  s_.waitTimedOut = false;
   // La stabilità della densità si misura DENTRO lo step: la finestra riparte.
   s_.stableRefGravity = 0.0f;
   s_.stableSinceEpoch = 0;
+  s_.waitingConfirm = false;
+  stableOut_ = 0;
+  stableLastReading_ = 0;
 }
 
 float ProfileEngine::stepSetpoint(const StepDef& st, int64_t elapsedSec) const {
@@ -176,13 +187,31 @@ bool ProfileEngine::gravityConditionMet(const StepDef& st, const TickInput& in) 
       // Una discesa lenta ma continua NON risulta mai stabile finché il calo nella
       // finestra supera la banda: è il comportamento voluto.
       const float band = st.stableBand > 0.0001f ? st.stableBand : 0.0001f;
-      if (s_.stableSinceEpoch == 0 || in.gravity > s_.stableRefGravity + band ||
-          in.gravity < s_.stableRefGravity - band) {
+      const bool fuori = in.gravity > s_.stableRefGravity + band ||
+                         in.gravity < s_.stableRefGravity - band;
+      const bool nuova = in.gravityEpoch == 0 || in.gravityEpoch != stableLastReading_;
+      if (nuova) stableLastReading_ = in.gravityEpoch;
+      if (s_.stableSinceEpoch == 0) {
         s_.stableRefGravity = in.gravity;
         s_.stableSinceEpoch = in.nowEpoch;
+        stableOut_ = 0;
         return false;
       }
-      return sdiff(in.nowEpoch, s_.stableSinceEpoch) >= (int64_t)(st.stableHours * 3600.0f);
+      if (!fuori) {
+        if (nuova) stableOut_ = 0;
+        return sdiff(in.nowEpoch, s_.stableSinceEpoch) >= (int64_t)(st.stableHours * 3600.0f);
+      }
+      // 3.16.0: un valore ISOLATO fuori banda (rumore del densimetro, ±0,001-0,002 SG su un
+      // iSpindel) non azzera la finestra: serve una seconda lettura fuori banda di fila.
+      // Finche' non e' confermato lo step non avanza. Senza l'istante della lettura
+      // (gravityEpoch = 0) ogni tick e' una lettura nuova: comportamento di prima.
+      if (nuova && stableOut_ < 255) stableOut_++;
+      if (in.gravityEpoch == 0 || stableOut_ >= 2) {
+        s_.stableRefGravity = in.gravity;
+        s_.stableSinceEpoch = in.nowEpoch;
+        stableOut_ = 0;
+      }
+      return false;
     }
   }
   return false;
@@ -192,6 +221,8 @@ bool ProfileEngine::stepDone(const StepDef& st, int64_t elapsedSec, const TickIn
                              float sp, bool* waitingGravity) {
   switch (st.type) {
     case StepType::Fixed:
+      if (s_.waitingTarget) return false;  // il tempo non e' ancora partito
+      return elapsedSec >= (int64_t)st.durationSec;
     case StepType::RampTime:
       return elapsedSec >= (int64_t)st.durationSec;
     case StepType::RampRate: {
@@ -206,15 +237,7 @@ bool ProfileEngine::stepDone(const StepDef& st, int64_t elapsedSec, const TickIn
     case StepType::Gravity: {
       // Timeout di sicurezza PRIMA di tutto: un densimetro fermo/incrostato non
       // deve tenere in ostaggio il profilo (0 = nessun timeout).
-      //
-      // ECCEZIONE: se la camera non ha NESSUNA sorgente di densità assegnata, il
-      // timeout non è una rete di sicurezza ma un avanzamento alla cieca — lo step
-      // scadrebbe dopo giorni senza aver mai misurato, tipicamente mandando la
-      // camera al cold crash su una fermentazione ancora attiva. In quel caso lo
-      // step resta fermo e la condizione va resa VISIBILE da chi chiama (allarme).
-      if (!in.gravitySourceMissing && st.maxDurationSec > 0 &&
-          elapsedSec >= (int64_t)st.maxDurationSec)
-        return true;
+      if (st.maxDurationSec > 0 && elapsedSec >= (int64_t)st.maxDurationSec) return true;
       // Mai avanzare su dato assente o stantio.
       if (!in.gravityValid || !in.gravityFresh) {
         *waitingGravity = true;
@@ -233,6 +256,7 @@ bool ProfileEngine::stepDone(const StepDef& st, int64_t elapsedSec, const TickIn
 uint32_t ProfileEngine::stepEndsAtEpoch() const {
   if (s_.mode != RunMode::Profile || s_.completed || s_.stepStartEpoch == 0) return 0;
   const StepDef& st = steps_[s_.stepIdx];
+  if (st.type == StepType::Fixed && s_.waitingTarget) return 0;  // non e' ancora partito
   if (st.type == StepType::Fixed || st.type == StepType::RampTime) {
     return s_.stepStartEpoch + st.durationSec;
   }
@@ -276,11 +300,66 @@ ProfileEngine::TickOutput ProfileEngine::tick(const TickInput& in) {
     return out;
   }
 
+  // "Attendi il target": il tempo dello step parte quando il mosto entra in tolleranza
+  // (stepStartEpoch riparte da li'). Se in kWaitMaxSec non ci arriva parte comunque, e lo si
+  // segnala: un frigo che non ce la fa non deve bloccare il profilo per sempre.
+  // Solo uno step Fixed puo' attendere: un /state.json di un profilo diverso non deve
+  // applicare l'attesa a una rampa o a uno step a densita'.
+  if (s_.waitingTarget && st.type != StepType::Fixed) s_.waitingTarget = false;
+  if (s_.waitingTarget) {
+    // Arrivo misurato su cio' che il controllo insegue davvero: con un setpoint manuale
+    // diverso dal target, il target non verrebbe mai raggiunto.
+    const float rif = s_.overrideActive ? s_.overrideSetpoint : st.targetC;
+    const bool arrivato = in.tempValid && in.tempC >= rif - tol_ && in.tempC <= rif + tol_;
+    // Attesa scaduta mentre la scheda era spenta (blackout): il mosto non ha mai potuto
+    // arrivarci, l'attesa riparte da adesso invece di far partire il tempo.
+    if (!arrivato && elapsed >= kWaitMaxSec && elapsed - kWaitMaxSec > kResumeGapSec) {
+      s_.stepStartEpoch = in.nowEpoch;
+      elapsed = 0;
+      out.stepChanged = true;  // da salvare: il nuovo inizio dell'attesa
+    }
+    if (arrivato || elapsed >= kWaitMaxSec) {
+      s_.waitingTarget = false;
+      s_.waitTimedOut = !arrivato;
+      s_.stepStartEpoch = in.nowEpoch;
+      elapsed = 0;
+      out.stepChanged = true;  // transizione da salvare: l'inizio vero dello step
+    } else {
+      out.waitingTarget = true;
+      out.hasSetpoint = true;
+      out.setpointC = s_.overrideActive ? s_.overrideSetpoint : sp;
+      out.allowHeat = st.allowHeat;
+      out.allowCool = st.allowCool;
+      return out;
+    }
+  }
+
+  // "Attendi conferma" (3.16.0): lo step e' finito e aspetta l'utente. Il setpoint resta
+  // quello di fine step (il target per step fissi, rampe concluse e step a densita').
+  if (s_.waitingConfirm) {
+    out.waitingConfirm = true;
+    out.hasSetpoint = true;
+    out.setpointC = s_.overrideActive ? s_.overrideSetpoint : sp;
+    out.allowHeat = st.allowHeat;
+    out.allowCool = st.allowCool;
+    return out;
+  }
+
   bool waiting = false;
-  // Avanza tutti gli step già scaduti (es. ripresa dopo un lungo blackout).
+  // Avanza gli step scaduti. In un tick normale ne scade uno alla volta; dopo
+  // un'interruzione lunga (blackout, scheda ferma) si avanza di UNO solo e lo step nuovo
+  // parte da adesso: dare per fatte soste mai avvenute, con il controllo spento,
+  // falserebbe la cotta (e un timeout a densita' successivo risulterebbe gia' scaduto).
   uint8_t guard = 0;
   while (guard++ <= kMaxSteps &&
          stepDone(steps_[s_.stepIdx], elapsed, in, sp, &waiting)) {
+    if (steps_[s_.stepIdx].confirm) {
+      s_.waitingConfirm = true;
+      out.waitingConfirm = true;
+      out.stepChanged = true;  // da salvare: l'attesa deve sopravvivere a un riavvio
+      sp = stepSetpoint(steps_[s_.stepIdx], elapsed);
+      break;
+    }
     int8_t next = nextEnabled((int8_t)(s_.stepIdx + 1));
     if (next < 0) {
       s_.completed = true;
@@ -298,11 +377,15 @@ ProfileEngine::TickOutput ProfileEngine::tick(const TickInput& in) {
     } else {
       startAt = in.nowEpoch;
     }
+    const bool ripresa = sdiff(in.nowEpoch, startAt) > kResumeGapSec;
+    if (ripresa) startAt = in.nowEpoch;
     enterStep((uint8_t)next, startAt, in.tempC, in.tempValid, done.targetC);
     out.stepChanged = true;
     elapsed = sdiff(in.nowEpoch, s_.stepStartEpoch);
     sp = stepSetpoint(steps_[s_.stepIdx], elapsed);
+    if (ripresa) break;  // al piu' un avanzamento dopo un'interruzione
   }
+  out.waitingTarget = s_.waitingTarget;
 
   out.waitingGravity = waiting;
   // Stallo della rampa °C/ora: il setpoint è saturato al target ma la temperatura

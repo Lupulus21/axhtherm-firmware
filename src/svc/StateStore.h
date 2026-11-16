@@ -17,6 +17,15 @@ struct ChamberState {
   float ogGravity = 0;          // densità iniziale della cotta (0 = non ancora catturata)
   float coolEstCph = 0;         // coefficiente appreso dello spegnimento predittivo
   float heatEstCph = 0;         // (°C per ora di marcia); 0 = mai appreso
+  uint8_t heatLock = 0;         // blocco del caldo (ax::HeatLock), 0 = nessuno
+  uint32_t heatLockEpoch = 0;   // istante del blocco
+  // Cold crash in corso (crashStartEpoch != 0): target, soglia dell'allarme di discesa
+  // lenta (°C in 6 ore) e istante in cui il target e' stato raggiunto (0 = non ancora).
+  uint32_t crashStartEpoch = 0;
+  float crashTargetC = 0;
+  float crashMinDropC = 0;
+  float crashCph = 0.5f;          // velocita' di discesa scelta (0,5 o 0,25 °C/h)
+  uint32_t crashReachedEpoch = 0;
 };
 
 // Stato runtime persistito su /state.json. Scritto SOLO sulle transizioni + checkpoint
@@ -55,13 +64,18 @@ class StateStore {
   // file" (comportamento storico: nessun vincolo). Valida solo dopo un load() riuscito.
   uint8_t chambersRead() const { return chambersRead_; }
 
-  // Quante camere del file sono state SCARTATE perché il firmware ne gestisce meno
-  // (accade riportando indietro il firmware). Il loro stato è perso: va detto, non
-  // lasciato scoprire dopo.
+  // Camere del file SCARTATE perché il firmware ne gestisce una sola: accade passando
+  // dalla 3.0.0 a due camere a questo firmware. discardedChambers() le conta tutte;
+  // excessChambers() solo quelle che erano ARMATE o con il motore acceso, cioè quelle
+  // il cui stato perso conta davvero e va segnalato come allarme. Una seconda camera
+  // mai allestita (disarmata, ferma) si scarta con una sola riga di log: segnalarla
+  // come guasto di storage sarebbe un falso allarme a ogni avvio dopo l'aggiornamento.
+  uint8_t discardedChambers() const { return discardedChambers_; }
   uint8_t excessChambers() const { return excessChambers_; }
 
  private:
   bool migratedV1_ = false;
   uint8_t chambersRead_ = 0;
+  uint8_t discardedChambers_ = 0;
   uint8_t excessChambers_ = 0;
 };

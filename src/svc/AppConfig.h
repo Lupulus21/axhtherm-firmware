@@ -16,7 +16,11 @@ struct AppConfig {
   // Sistema
   static constexpr const char* kDefaultUiPassword = "axhtherm";
   String hostname = "axhtherm";
-  String uiPassword = kDefaultUiPassword;  // placeholder (D5): da cambiare al primo avvio
+  String uiPassword = kDefaultUiPassword;  // placeholder: sostituita al primo avvio (provisioning)
+  // Vero finché le password sono quelle generate al primo avvio: l'OLED le mostra solo in
+  // questa fase, con la rete di configurazione attiva. Diventa falso quando l'utente
+  // sceglie la sua password dell'interfaccia.
+  bool pwdAuto = false;
   bool usingDefaultUiPassword() const { return uiPassword == kDefaultUiPassword; }
 
   // Rete
@@ -32,30 +36,19 @@ struct AppConfig {
   String ntpServer = "pool.ntp.org";               // unico host esterno, disattivabile
   String tz = "CET-1CEST,M3.5.0,M10.5.0/3";        // D6: Europe/Rome con ora legale
 
-  // Sonde: kProbesPerChamber per camera, nell'ordine controllo(mosto), camera, ambiente.
-  // L'assegnazione sonda->camera vive in ChamberCtx, non qui: questi sono solo gli slot.
+  // Sonde, nell'ordine controllo(mosto), camera, ambiente. Il ruolo di ciascuna vive in
+  // ChamberCtx, non qui: questi sono solo gli slot.
   String probeId[ax::kMaxProbes];
   float probeOffset[ax::kMaxProbes] = {0.0f};
   String probeLabel[ax::kMaxProbes];
 
-  // Nome della camera, mostrato in UI/OLED. NB: i parametri di REGOLAZIONE (PID,
-  // tolleranza, tempi) restano CONDIVISI fra le camere. È una scelta deliberata: sono
-  // 13 campi e duplicarli gonfierebbe /config.json, che è servito e salvato con
-  // documenti JSON da 6 KB su uno heap di ~17 KB — la causa accertata dei salvataggi
-  // falliti in campo. L'inerzia specifica di ciascun frigo è comunque già per camera:
-  // la imparano gli stimatori predittivi (coolEstCph/heatEstCph in /state.json).
-  // Una taratura PID per camera resta un'estensione naturale, da fare misurando.
+  // Nome della camera. Conservato nella sezione "chambers" di /config.json per
+  // compatibilità con i file scritti dalla 3.0.0.
   String chamberLabel[AX_N_CHAMBERS];
 
   AppConfig() {
     for (uint8_t i = 0; i < AX_N_CHAMBERS; i++) chamberLabel[i] = "Camera " + String(i + 1);
-    // Etichette di default. A camera singola sono esattamente "mosto"/"camera"/
-    // "ambiente" come la v2.23.2; dalla seconda camera in poi prendono il suffisso.
-    for (uint8_t i = 0; i < ax::kMaxProbes; i++) {
-      probeLabel[i] = ax::defaultProbeRole(i);
-      const uint8_t camera = i / ax::kProbesPerChamber;
-      if (camera > 0) probeLabel[i] += " " + String(camera + 1);
-    }
+    for (uint8_t i = 0; i < ax::kMaxProbes; i++) probeLabel[i] = ax::defaultProbeRole(i);
   }
 
   // Regolazione
@@ -70,31 +63,42 @@ struct AppConfig {
   uint16_t compressorMinOnSec = 60;
   uint16_t minStateSec = 60;
   uint16_t minSwitchSec = 120;
+  // Limiti sull'aria della camera (sonda "camera", ax::AirLimit), riferiti al setpoint.
+  float airMinC = -5.0f;     // minimo assoluto dell'aria col freddo (-10 = nessun minimo, max 10)
+  float airBelowSpC = 0.0f;  // aria al massimo cosi' sotto il setpoint (0 = nessun limite)
+  float airAboveSpC = 10.0f; // aria al massimo cosi' sopra il setpoint (0 = nessun limite)
+
+  // Sicurezza del riscaldatore (rilevatori di guasto, lib/axcore/src/ax/HeaterGuard.h).
+  // Al rilevamento il caldo viene BLOCCATO (il freddo resta consentito) fino allo sblocco
+  // manuale; il blocco sopravvive ai riavvii.
+  uint16_t heatMaxOnH = 12;    // caldo acceso di continuo oltre N ore (2..48)
+  uint16_t heatStuckMin = 60;  // sonda ferma a caldo acceso per N minuti (0 = spento, 15..240)
 
   // iSpindel / densità
   uint16_t gravityStaleMin = 60;  // oltre: dato stantio -> allarme, mai avanzare
-  // Offset di taratura, PER CAMERA perché appartiene allo STRUMENTO, non al sistema:
-  // due iSpindel hanno tarature diverse, e applicare quella dell'uno alle letture
-  // dell'altro falsifica la densità dentro GravityTracker::update, cioè a monte di
-  // ogni allarme e di ogni confronto del motore. Costa 4 B per camera.
+  // Offset di taratura del densimetro assegnato: appartiene allo STRUMENTO. Applicato
+  // dentro GravityTracker::update, cioè a monte di ogni allarme e confronto del motore.
   float gravityCorrection[AX_N_CHAMBERS] = {};
   float batteryAlertV = 3.3f;
+  // Avviso «fermentazione ferma?» (3.16.0): densita' ferma da 48 ore ma sopra l'atteso.
+  // Disattivabile per le birre che finiscono alte di proposito.
+  bool fermStuckAlert = true;
+
+  // Ventola della camera (3.17.0): rele' 0 = nessuna; modo 0 = segue caldo e freddo, 1 = sempre
+  // accesa a regolazione attiva. Post-funzionamento in secondi; ricircolo «X min ogni Y min»
+  // (0 = spento).
+  uint8_t fanRel = 0;
+  uint8_t fanMode = 0;
+  uint16_t fanPostRunSec = 120;
+  uint16_t fanCycleOnMin = 0;
+  uint16_t fanCycleEveryMin = 0;
   String gravityUnit = "sg";  // D11: "sg" o "plato". NON solo etichetta: governa i
                               // confronti/formule degli step a densità, il clamp di
                               // /ispindel e la scala del log; immutabile a profilo in corso.
   String ispindelToken = "";  // se non vuoto: il POST /ispindel deve portare lo stesso token
-  // Densimetro assegnato a ciascuna camera, per NOME (confronto senza distinzione di
-  // maiuscole). Regola di instradamento, valida per costruzione su AL PIÙ UNA camera —
-  // vedi onIspindel() in main.cpp, che è l'unico punto che la applica:
-  //   1. lettura SENZA nome        -> camera 0, sempre (storico: il Tilt inoltrato da
-  //                                   Home Assistant non manda "name" — HOME_ASSISTANT.md §7);
-  //   2. nome rivendicato da una camera -> quella camera, e nessun'altra;
-  //   3. nome non rivendicato      -> camera 0 solo se il suo campo è VUOTO
-  //                                   ("accetta chiunque", storico), altrimenti scartata.
-  // Vuoto sulla camera 0 = accetta chiunque. Vuoto su una camera con indice > 0 =
-  // NON ASSEGNATA: non riceve letture, e i suoi step a densità non avanzano (né per
-  // condizione né per timeout: vedi TickInput::gravitySourceMissing).
-  // A AX_N_CHAMBERS=1 le tre regole si riducono esattamente al filtro della v2.23.2.
+  // Densimetro assegnato, per NOME (confronto senza distinzione di maiuscole). Vuoto =
+  // accetta chiunque. Una lettura SENZA nome passa sempre: il Tilt inoltrato da Home
+  // Assistant non manda "name" (HOME_ASSISTANT.md §7). Filtro applicato in onIspindel().
   String gravityDevice[AX_N_CHAMBERS];
 
   // Display OLED — controller UNVERIFIED: selezionabile
@@ -102,6 +106,9 @@ struct AppConfig {
   String oledDriver = "ssd1306";  // "ssd1306" | "sh1106"
   uint8_t oledAddress = 0x3C;
   bool oledFlip = false;
+  // Luminosita' (3.15.0, PH-28/UX-16): 207 = quella della libreria, cioe' come prima.
+  // Piu' bassa allunga la vita dei pixel di un display acceso giorno e notte.
+  uint8_t oledBrightness = 207;
 
   // Log storico
   uint8_t logSampleMin = 5;      // D8

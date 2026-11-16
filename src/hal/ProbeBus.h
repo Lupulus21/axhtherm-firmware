@@ -4,6 +4,7 @@
 #include <DallasTemperature.h>
 #include "hardware_map.h"
 #include "ax_dimensions.h"
+#include "ax/ProbeFault.h"
 
 // Bus OneWire con conversione asincrona: il loop di controllo non si ferma mai.
 // Letture fuori dal range fisico plausibile (incluse -127 e 85 di power-on) = non valide.
@@ -40,6 +41,11 @@ class ProbeBus {
     uint32_t firstFail = 0;
     float lastBadC = 0.0f;     // ultimo valore rifiutato: dice DI CHE tipo è il guasto
     uint32_t badDisc = 0;      // quante volte era -127 (nessuna risposta / CRC fallito)
+    // Tentativi falliti per tipo di guasto (indice = ax::ProbeFault; 0 = recuperati alla
+    // rilettura), e l'ultimo tipo visto. Dicono dove guardare: connettore, cavo, pull-up,
+    // alimentazione.
+    uint16_t kind[ax::kProbeFaultKinds] = {0};
+    uint8_t lastKind = 0;
   };
   Stats stats(uint8_t idx) const { return idx < kProbes ? stat_[idx] : Stats{}; }
   void resetStats() {
@@ -169,9 +175,7 @@ class ProbeBus {
           stat_[i].firstFail++;
           stat_[i].lastBadC = t;
           if (t < -100.0f) stat_[i].badDisc++;
-          // -127 significa "nessuna risposta o CRC fallito": un disturbo transitorio non
-          // deve fermare il compressore, quindi si richiede una volta (costa ~12 ms).
-          if (t < -100.0f) t = dallas_->getTempC(cfg_[i].addr);
+          t = rileggi(i, t);
         }
         stat_[i].reads++;
         if (t > kMinValidC && t < kMaxValidC) {
@@ -286,6 +290,38 @@ class ProbeBus {
   }
 
  private:
+  // Lettura fallita: si rilegge lo scratchpad (gli stessi dati della conversione appena
+  // fatta, ~12 ms) per capire il PERCHE', e la rilettura vale da ritentativo. Un guasto
+  // transitorio (nessuna risposta, linea alta o a massa, CRC) si ritenta fino a due volte:
+  // un disturbo non deve fermare il compressore. Gli altri non cambiano rileggendo.
+  // Il tipo si conta una volta per ciclo (l'esito finale), come le letture perse.
+  // Famiglie diverse dalla DS18B20: il ritentativo di sempre, con la libreria.
+  float rileggi(uint8_t i, float t) {
+    if (!ax::isB20Family(cfg_[i].addr[0]))
+      return t < -100.0f ? dallas_->getTempC(cfg_[i].addr) : t;
+    ax::ProbeFault f = ax::ProbeFault::NoResponse;
+    float out = t;
+    for (uint8_t tent = 0; tent < 2; tent++) {
+      uint8_t sp[9];
+      const bool pres = dallas_->readScratchPad(cfg_[i].addr, sp);
+      float tt = t;
+      f = ax::classifyScratchpad(pres, sp, cfg_[i].addr[0], kMinValidC, kMaxValidC, &tt);
+      if (f == ax::ProbeFault::None) { out = tt; break; }
+      if (f == ax::ProbeFault::Reset) {
+        // La sonda si e' riavviata (alimentazione instabile): riparte con la risoluzione
+        // salvata nella sua EEPROM. Si riporta a 12 bit; la libreria scrive solo se diversa,
+        // quindi di norma e' una sola lettura in piu'.
+        dallas_->setResolution(cfg_[i].addr, 12, true);
+        break;
+      }
+      if (f == ax::ProbeFault::OutOfRange) break;
+    }
+    Stats& s = stat_[i];
+    if (s.kind[(uint8_t)f] < 0xFFFF) s.kind[(uint8_t)f]++;
+    if (f != ax::ProbeFault::None) s.lastKind = (uint8_t)f;
+    return out;
+  }
+
   static bool parseAddr(const String& hex, uint8_t out[8]) {
     if (hex.length() != 16) return false;
     for (uint8_t i = 0; i < 8; i++) {

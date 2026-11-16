@@ -25,4 +25,8 @@ class ConfigStore {
   void toJson(const AppConfig& cfg, JsonDocument& doc, bool maskSecrets) const;
   // Applica su cfg i campi presenti in doc; "***" nei campi segreti = mantieni il valore.
   void fromJson(AppConfig* cfg, JsonDocument& doc) const;
+  // Campi numerici di `doc` che fromJson ha riportato nei limiti plausibili, come elenco
+  // JSON di stringhe ("\"tolerance\",\"kp\""). Vuoto se nessuno. Usata dal PUT (risposta
+  // "corrected") e dal caricamento all'avvio (riga di log).
+  static String correctedFields(JsonDocument& doc, const AppConfig& c);
 };

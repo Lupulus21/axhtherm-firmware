@@ -104,6 +104,12 @@ Deve rispondere {"result":"ok"} in MENO DI 5 SECONDI: oltre quel tempo la POST d
 - CONFIGURA L'ANTI-FALSI-POSITIVI: poiche' una singola lettura sbagliata fa avanzare il profilo, pretendi N letture consecutive sotto soglia prima di far scattare lo step (es. 3, cioe' 45 minuti a 900 s), scarta i gravity == 0 e i valori fuori dall'intervallo di plausibilita'. Usa il campo 'interval' ricevuto nel JSON per calcolare la staleness in modo adattivo, e logga l'RSSI: e' l'indicatore precoce di perdita del collegamento.
 - RIMETTI L'INTERVALLO A 900 s e ricarica la batteria a 4.2 V pieni prima di iniziare la cotta. Non partire da 3.8 V pensando di avere autonomia.
 - MONITORAGGIO NELLE PRIME 24 h: densita' aggiornata ogni ~15 min con eta' del dato sempre sotto i 30 min, RSSI stabile, tensione in calo lento e lineare (~0.01 V/h e' gia' troppo e indica un guasto). Se compare 'densita' stantia' a fermentatore chiuso, le cause in ordine di probabilita' sono: WiFi debole, batteria sotto 3.3 V, endpoint che risponde lento.
+- DALLA 3.16.0 — nel registro (grafico e CSV) la densita' si scrive solo finche' e' fresca: un
+  densimetro muto non lascia piu' una riga piatta con l'ultimo valore. Ogni campione porta la
+  sua unita' (SG o °P), quindi cambiare unita' non stravolge lo storico. La scheda calcola anche
+  l'andamento (medie orarie, pendenza su 24-48 ore): «fermentazione attiva / rallenta / ferma»
+  in dashboard, sull'OLED e in Home Assistant, con gli avvisi «fermentazione finita» e
+  «fermentazione ferma?» (vedi docs/PROFILI.md).
 
 ## 6. ERRORI TIPICI E COME EVITARLI
 
@@ -147,4 +153,23 @@ Deve rispondere {"result":"ok"} in MENO DI 5 SECONDI: oltre quel tempo la POST d
 - Il motore di calcolo e' tinyexpr: '^' e' mappato su pow(), i numeri sono letti con strtod (notazione scientifica 1.0E-6 valida), funzioni disponibili abs, acos, asin, atan, atan2, ceil, cos, cosh, e, exp, fac, floor, ln, log, log10, ncr, npr, pi, pow, sin, sinh, sqrt, tan, tanh. Fonte: pio/lib/tinyexpr/tinyexpr.c:162-192, 251, 292.
 - Il campo 'Polynominal' del form accetta al massimo 250 caratteri (lo storage interno e' char polynominal[1000]): se il tool restituisce la forma espansa 'c*tilt*tilt*tilt' va riscritta come 'c*tilt^3'. Brewfather conferma sul campo che formule troppo lunghe possono fallire. Fonti: pio/src/iSpindel.cpp:381-386, pio/lib/Globals/Globals.h:145, docs.brewfather.app/integrations/ispindel.
 - L'UNITA' DELLA DENSITA' NON E' TRASMESSA: nel JSON esiste temp_units per la temperatura ma nessun campo equivalente per la densita'. Il polinomio di fabbrica '-0.00031*tilt^2+0.557*tilt-14.054' restituisce gradi PLATO (a tilt=60 da' 18.25; a tilt=25 da' -0.32), NON SG. E' il motivo per cui un iSpindel appena flashato manda numeri che AxHTherm rifiuta. Fonti: pio/lib/Globals/Globals.h:145, pio/src/iSpindel.cpp.
-- Lato AxHTherm, handleIspindel() (src/svc/WebApi.cpp:551-585): token verificato solo se cfg->ispindelToken non e' vuoto; 'gravity' assente -> HTTP 400 'campo gravity mancante'; clamp di plausibilita' dipendente da cfg->gravityUnit — se 'plato' range -1..45, altrimenti (default 'sg') range 0.90..1.30 — piu' temperatura obbligatoriamente fra -10 e 50 gradi C; fuori range -> HTTP 400 'valori fuori range plausibile'. Risposta OK: {"result":"ok"}.
+- Lato AxHTherm, handleIspindel() (src/svc/WebApi.cpp): nome della scheda nell'intestazione Host verificato (IP o nome, dalla 3.7.0); senza codice dei densimetri serve 'Content-Type: application/json' (HTTP 415 altrimenti, dalla 3.9.0); token verificato solo se cfg->ispindelToken non e' vuoto, con una pausa crescente dopo 5 errori dallo stesso indirizzo (HTTP 429); 'gravity' assente -> HTTP 400 'campo gravity mancante'; temperatura convertita in gradi C secondo 'temp_units' (C, F o K; assente = C, dalla 3.9.0); clamp di plausibilita' dipendente da cfg->gravityUnit — se 'plato' range -1..45, altrimenti (default 'sg') range 0.90..1.30 — piu' temperatura obbligatoriamente fra -10 e 50 gradi C; fuori range -> HTTP 400 'valori fuori range plausibile'. Risposta OK: {"result":"ok"}.
+
+## 7. CODICE DEI DENSIMETRI E PONTE BLE (dalla 3.9.0)
+
+- Il codice (Impostazioni → iSpindel → «Codice dei densimetri», pulsante «Genera codice») va
+  copiato nel campo «Token/ API key» del portale dell'iSpindel. Con un profilo a densità è
+  consigliato: senza, qualunque dispositivo della rete di casa può inviare letture, e la dashboard
+  lo segnala («CODICE DEI DENSIMETRI vuoto»). Senza codice la scheda accetta solo letture inviate
+  come JSON, il che blocca le pagine web malevole ma non un dispositivo della rete.
+- Contratto per un ponte (ESP32 che legge un Tilt o un RAPT Pill via Bluetooth, o un'automazione
+  di Home Assistant) che invia a `POST /ispindel`:
+  - `Content-Type: application/json`;
+  - `name`: unico per densimetro (è con questo che si sceglie quale pilota la cotta);
+  - `ID`: numero stabile, per esempio gli ultimi 4 byte del MAC Bluetooth; se manca (0) il
+    densimetro si riconosce solo dal nome;
+  - `gravity`: nell'unità impostata sulla scheda (SG o °Plato);
+  - `temperature` con `temp_units` ("C", "F" o "K"; senza, si intende °C);
+  - `battery` in volt (fra 0 e 6; altri valori, per esempio una percentuale, vengono ignorati);
+  - `angle` solo se il densimetro lo misura (la taratura guidata lo richiede);
+  - `token` se sulla scheda è impostato il codice.

@@ -14,6 +14,12 @@ bool ConfigStore::load(AppConfig* cfg) {
   fromJson(cfg, doc);
   cfg->configRev = doc["configRev"] | (uint32_t)0;  // letta a parte: fromJson non la tocca
   cfg->valid = true;
+  // Una configurazione scritta da un firmware precedente puo' avere valori che oggi stanno
+  // fuori dagli intervalli plausibili: vengono riportati nei limiti, e va detto.
+  const String corretti = correctedFields(doc, *cfg);
+  if (corretti.length())
+    Serial.printf_P(PSTR("[cfg] valori riportati nei limiti all'avvio: %s (salva le impostazioni "
+                         "per renderlo definitivo)\n"), corretti.c_str());
   return true;
 }
 
@@ -53,6 +59,7 @@ void ConfigStore::toJson(const AppConfig& c, JsonDocument& doc, bool mask) const
   JsonObject sys = doc.createNestedObject("system");
   sys["hostname"] = c.hostname;
   sys["uiPassword"] = mask ? String(kMask) : c.uiPassword;
+  sys["pwdAuto"] = c.pwdAuto;
 
   JsonObject net = doc.createNestedObject("network");
   net["ssid"] = c.ssid;
@@ -92,6 +99,9 @@ void ConfigStore::toJson(const AppConfig& c, JsonDocument& doc, bool mask) const
   ctl["compressorMinOnSec"] = c.compressorMinOnSec;
   ctl["minStateSec"] = c.minStateSec;
   ctl["minSwitchSec"] = c.minSwitchSec;
+  ctl["airMinC"] = c.airMinC;
+  ctl["airBelowSpC"] = c.airBelowSpC;
+  ctl["airAboveSpC"] = c.airAboveSpC;
 
   JsonObject isp = doc.createNestedObject("ispindel");
   isp["staleMin"] = c.gravityStaleMin;
@@ -100,15 +110,24 @@ void ConfigStore::toJson(const AppConfig& c, JsonDocument& doc, bool mask) const
   // ritorno indietro, e una config scritta da questo firmware resta leggibile da quello.
   isp["correction"] = c.gravityCorrection[0];
   isp["batteryAlert"] = c.batteryAlertV;
+  isp["stuckAlert"] = c.fermStuckAlert;
   isp["unit"] = c.gravityUnit;
   isp["token"] = mask && c.ispindelToken.length() ? String(kMask) : c.ispindelToken;
   isp["device"] = c.gravityDevice[0];  // specchio della camera 0 — vedi sopra
+
+  JsonObject fan = doc.createNestedObject("fan");
+  fan["relay"] = c.fanRel;
+  fan["mode"] = c.fanMode;
+  fan["postRunSec"] = c.fanPostRunSec;
+  fan["cycleOnMin"] = c.fanCycleOnMin;
+  fan["cycleEveryMin"] = c.fanCycleEveryMin;
 
   JsonObject dsp = doc.createNestedObject("display");
   dsp["enabled"] = c.oledEnabled;
   dsp["driver"] = c.oledDriver;
   dsp["address"] = c.oledAddress;
   dsp["flip"] = c.oledFlip;
+  dsp["brightness"] = c.oledBrightness;
 
   JsonObject lg = doc.createNestedObject("log");
   lg["sampleMin"] = c.logSampleMin;
@@ -125,6 +144,10 @@ void ConfigStore::toJson(const AppConfig& c, JsonDocument& doc, bool mask) const
 
   JsonObject ota = doc.createNestedObject("ota");
   ota["enabled"] = c.otaEnabled;
+
+  JsonObject saf = doc.createNestedObject("safety");
+  saf["heatMaxOnH"] = c.heatMaxOnH;
+  saf["heatStuckMin"] = c.heatStuckMin;
 }
 
 static void setSecret(String* dst, JsonVariantConst v) {
@@ -139,6 +162,7 @@ void ConfigStore::fromJson(AppConfig* c, JsonDocument& doc) const {
   if (!sys.isNull()) {
     c->hostname = sys["hostname"] | c->hostname;
     setSecret(&c->uiPassword, sys["uiPassword"]);
+    c->pwdAuto = sys["pwdAuto"] | c->pwdAuto;
   }
   JsonObject net = doc["network"];
   if (!net.isNull()) {
@@ -246,6 +270,26 @@ void ConfigStore::fromJson(AppConfig* c, JsonDocument& doc) const {
     if (c->compressorMinOnSec > 1800) c->compressorMinOnSec = 1800;
     if (c->minStateSec > 1800) c->minStateSec = 1800;
     if (c->minSwitchSec > 1800) c->minSwitchSec = 1800;
+    c->airMinC = ctl["airMinC"] | c->airMinC;
+    c->airBelowSpC = ctl["airBelowSpC"] | c->airBelowSpC;
+    c->airAboveSpC = ctl["airAboveSpC"] | c->airAboveSpC;
+    // Limiti plausibili sui parametri di regolazione. Un refuso (tolleranza 5 invece di
+    // 0,5, un segno meno, i millisecondi scritti in secondi) degraderebbe la regolazione e i
+    // profili in silenzio: la tolleranza decide anche quando una rampa e' arrivata. Il valore
+    // fuori limite viene riportato nel limite, e la risposta del PUT dice quali campi.
+    auto clampF = [](float& v, float lo, float hi) { if (!(v >= lo)) v = lo; if (v > hi) v = hi; };
+    clampF(c->toleranceC, 0.1f, 3.0f);
+    clampF(c->pidKp, 0.0f, 50.0f);
+    clampF(c->pidKi, 0.0f, 5.0f);
+    clampF(c->pidKd, 0.0f, 100.0f);
+    if (c->pidWindowMs < 2000) c->pidWindowMs = 2000;
+    if (c->pidWindowMs > 600000) c->pidWindowMs = 600000;
+    // fullPowerBelow sotto 0,5 terrebbe il caldo al 100% fino al setpoint o oltre.
+    clampF(c->pidFullPowerBelow, 0.5f, 20.0f);
+    clampF(c->pidCutAbove, 0.0f, 5.0f);
+    clampF(c->airMinC, -10.0f, 10.0f);
+    clampF(c->airBelowSpC, 0.0f, 30.0f);
+    clampF(c->airAboveSpC, 0.0f, 30.0f);
   }
   JsonObject isp = doc["ispindel"];
   if (!isp.isNull()) {
@@ -269,6 +313,7 @@ void ConfigStore::fromJson(AppConfig* c, JsonDocument& doc) const {
     if (!(c->gravityCorrection[0] >= -0.1f && c->gravityCorrection[0] <= 0.1f))
       c->gravityCorrection[0] = 0.0f;
     c->batteryAlertV = isp["batteryAlert"] | c->batteryAlertV;
+    c->fermStuckAlert = isp["stuckAlert"] | c->fermStuckAlert;
     c->gravityUnit = isp["unit"] | c->gravityUnit;
     // Whitelist: ogni consumatore confronta == "plato" in minuscolo, quindi una variante
     // ("Plato", "°P", refuso) selezionerebbe in silenzio il ramo SG. Fuori whitelist -> "sg".
@@ -280,12 +325,28 @@ void ConfigStore::fromJson(AppConfig* c, JsonDocument& doc) const {
         c->gravityDevice[0] = c->gravityDevice[0].substring(0, 32);
     }
   }
+  JsonObject fan = doc["fan"];
+  if (!fan.isNull()) {
+    c->fanRel = fan["relay"] | c->fanRel;
+    if (c->fanRel > 8) c->fanRel = 0;
+    c->fanMode = fan["mode"] | c->fanMode;
+    if (c->fanMode > 1) c->fanMode = 0;
+    c->fanPostRunSec = fan["postRunSec"] | c->fanPostRunSec;
+    if (c->fanPostRunSec > 1800) c->fanPostRunSec = 1800;
+    c->fanCycleOnMin = fan["cycleOnMin"] | c->fanCycleOnMin;
+    c->fanCycleEveryMin = fan["cycleEveryMin"] | c->fanCycleEveryMin;
+    if (c->fanCycleEveryMin > 1440) c->fanCycleEveryMin = 1440;
+    // Ricircolo sensato solo con una pausa: «5 ogni 5» sarebbe «sempre accesa».
+    if (c->fanCycleOnMin >= c->fanCycleEveryMin) c->fanCycleOnMin = c->fanCycleEveryMin = 0;
+  }
   JsonObject dsp = doc["display"];
   if (!dsp.isNull()) {
     c->oledEnabled = dsp["enabled"] | c->oledEnabled;
     c->oledDriver = dsp["driver"] | c->oledDriver;
     c->oledAddress = dsp["address"] | c->oledAddress;
     c->oledFlip = dsp["flip"] | c->oledFlip;
+    c->oledBrightness = dsp["brightness"] | c->oledBrightness;
+    if (c->oledBrightness < 5) c->oledBrightness = 5;  // mai uno schermo "spento" per sbaglio
   }
   JsonObject lg = doc["log"];
   if (!lg.isNull()) {
@@ -312,6 +373,19 @@ void ConfigStore::fromJson(AppConfig* c, JsonDocument& doc) const {
   if (!ota.isNull()) {
     c->otaEnabled = ota["enabled"] | c->otaEnabled;
   }
+  JsonObject saf = doc["safety"];
+  if (!saf.isNull()) {
+    c->heatMaxOnH = saf["heatMaxOnH"] | c->heatMaxOnH;
+    c->heatStuckMin = saf["heatStuckMin"] | c->heatStuckMin;
+    // Il tempo massimo NON si disattiva: e' la protezione che non si fida della sonda.
+    // Sotto le 2 ore scatterebbe su un riscaldamento lento ma legittimo (20 L con un
+    // tappetino da 25 W salgono di ~1 °C l'ora).
+    if (c->heatMaxOnH < 2) c->heatMaxOnH = 2;
+    if (c->heatMaxOnH > 48) c->heatMaxOnH = 48;
+    // Sonda ferma: 0 = spento (riscaldatore debole su volume grande: falsi blocchi).
+    if (c->heatStuckMin && c->heatStuckMin < 15) c->heatStuckMin = 15;
+    if (c->heatStuckMin > 240) c->heatStuckMin = 240;
+  }
   // Tetti di lunghezza sui campi liberi: senza, stringhe lunghe accumulate su più PUT
   // possono far traboccare il documento (sezioni finali perse in silenzio) e impedire il
   // ricaricamento al boot. Limiti generosi per l'uso reale.
@@ -335,4 +409,36 @@ void ConfigStore::fromJson(AppConfig* c, JsonDocument& doc) const {
     while (cut > 0 && ((uint8_t)c->chamberLabel[i][cut] & 0xC0) == 0x80) cut--;
     c->chamberLabel[i] = c->chamberLabel[i].substring(0, cut);
   }
+}
+
+String ConfigStore::correctedFields(JsonDocument& doc, const AppConfig& c) {
+  struct Campo { const char* sez; const char* chiave; float val; };
+  const Campo campi[] = {
+      {"control", "tolerance", c.toleranceC},        {"control", "kp", c.pidKp},
+      {"control", "ki", c.pidKi},                    {"control", "kd", c.pidKd},
+      {"control", "windowMs", (float)c.pidWindowMs},
+      {"control", "fullPowerBelow", c.pidFullPowerBelow},
+      {"control", "cutAbove", c.pidCutAbove},
+      {"control", "compressorRestMin", (float)c.compressorRestMin},
+      {"control", "compressorMinOnSec", (float)c.compressorMinOnSec},
+      {"control", "minStateSec", (float)c.minStateSec},
+      {"control", "minSwitchSec", (float)c.minSwitchSec},
+      {"control", "airMinC", c.airMinC},             {"control", "airBelowSpC", c.airBelowSpC},
+      {"control", "airAboveSpC", c.airAboveSpC},
+      {"safety", "heatMaxOnH", (float)c.heatMaxOnH},
+      {"safety", "heatStuckMin", (float)c.heatStuckMin},
+  };
+  String out;
+  for (const Campo& k : campi) {
+    JsonVariantConst v = doc[k.sez][k.chiave];
+    if (v.isNull()) continue;
+    const float inviato = v.as<float>();
+    if (inviato > k.val + 0.0005f || inviato < k.val - 0.0005f) {
+      if (out.length()) out += ',';
+      out += '"';
+      out += k.chiave;
+      out += '"';
+    }
+  }
+  return out;
 }

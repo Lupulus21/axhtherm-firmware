@@ -25,7 +25,9 @@ constexpr uint8_t I2C_ADDR_MCP23008 = 0x20;  // conferma a runtime con lo scan I
 
 // --- RTC DS1307 (schema: modulo Tiny RTC I2C; indirizzo fisso del chip) ---
 constexpr uint8_t I2C_ADDR_DS1307 = 0x68;
-// Il modulo Tiny RTC porta tipicamente una EEPROM AT24C32 @0x50: ignorata. // UNVERIFIED
+// EEPROM AT24C32 del modulo Tiny RTC: vista a 0x50 sulla scheda PCBWay (scan I2C, 03/11/2026).
+// Dalla 3.15.0 ospita il registro eventi (svc/EventLog); se non risponde, il registro e' spento.
+constexpr uint8_t I2C_ADDR_EEPROM = 0x50;
 
 // --- OLED (schema: solo connettore I2C "OLED bus"; controller NON indicato) ---
 // UNVERIFIED: SSD1306 o SH1106, 0x3C o 0x3D — driver e indirizzo scelti da configurazione

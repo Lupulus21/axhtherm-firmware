@@ -7,7 +7,7 @@ void NetworkManager::begin(const String& hostname, const String& ssid, const Str
   hostname_ = hostname;
   ssid_ = ssid;
   pass_ = pass;
-  apPassword_ = apPassword.length() >= 8 ? apPassword : String("axhtherm25");
+  apPassword_ = apPassFor(apPassword);
   apAfterMs_ = (uint32_t)apAfterMin * 60000UL;
   hasSta_ = ssid_.length() > 0;
 
@@ -37,9 +37,9 @@ void NetworkManager::startAp() {
   if (apActive_) return;
   WiFi.softAPConfig(IPAddress(192, 168, 4, 1), IPAddress(192, 168, 4, 1),
                     IPAddress(255, 255, 255, 0));
-  String apSsid = hostname_ + "-setup";
+  String apSsid = apSsidFor(hostname_);
   apActive_ = WiFi.softAP(apSsid, apPassword_);
-  if (apActive_) Serial.printf("[net] SoftAP attivo: %s / 192.168.4.1\n", apSsid.c_str());
+  if (apActive_) Serial.printf_P(PSTR("[net] SoftAP attivo: %s / 192.168.4.1\n"), apSsid.c_str());
   else Serial.println(F("[net] ERRORE avvio SoftAP"));
 }
 
@@ -62,7 +62,7 @@ void NetworkManager::loop(uint32_t nowMs) {
   if (sta) {
     if (staUpSinceMs_ == 0) {
       staUpSinceMs_ = nowMs;
-      Serial.printf("[net] STA connessa: %s\n", WiFi.localIP().toString().c_str());
+      Serial.printf_P(PSTR("[net] STA connessa: %s\n"), WiFi.localIP().toString().c_str());
       if (!mdnsStarted_) {
         if (MDNS.begin(hostname_)) {
           MDNS.addService("http", "tcp", 80);

@@ -3,11 +3,9 @@
 #include <LittleFS.h>
 #include "svc/FsCommit.h"
 
-// Dimensione del documento JSON. Cresce con le camere ma NON con un unico blocco
-// monolitico: ogni camera è un oggetto dell'array "chambers". A N=1 il file è
-// leggermente più grande della v1 (la nidificazione costa), ma resta ampiamente
-// dentro il budget. La guardia overflowed() qui sotto è la rete di sicurezza:
-// mai promuovere uno stato troncato.
+// Dimensione del documento JSON (schema v2: la camera è il primo e unico oggetto
+// dell'array "chambers", leggibile anche dalla 3.0.0). La guardia overflowed() qui
+// sotto è la rete di sicurezza: mai promuovere uno stato troncato.
 static size_t stateDocSize() { return 320u + (size_t)AX_N_CHAMBERS * 1024u; }
 
 // --- serializzazione di UNA camera -------------------------------------------------
@@ -29,6 +27,9 @@ static void chamberToJson(const ChamberState& c, JsonObject o) {
   o["stableRefGravity"] = c.engine.stableRefGravity;
   o["stableSinceEpoch"] = c.engine.stableSinceEpoch;
   o["rampReanchored"] = c.engine.rampReanchored;
+  if (c.engine.waitingTarget) o["waitTarget"] = true;
+  if (c.engine.waitTimedOut) o["waitTimedOut"] = true;
+  if (c.engine.waitingConfirm) o["waitConfirm"] = true;
   o["coolLastOn"] = c.guard.lastOnEpoch;
   o["coolLastOff"] = c.guard.lastOffEpoch;
   o["coolWasOn"] = c.coolWasOn;
@@ -39,6 +40,15 @@ static void chamberToJson(const ChamberState& c, JsonObject o) {
   o["ogGravity"] = c.ogGravity;
   o["coolEstCph"] = c.coolEstCph;
   o["heatEstCph"] = c.heatEstCph;
+  o["heatLock"] = c.heatLock;
+  o["heatLockAt"] = c.heatLockEpoch;
+  if (c.crashStartEpoch) {
+    o["crashStart"] = c.crashStartEpoch;
+    o["crashTarget"] = c.crashTargetC;
+    o["crashMinDrop"] = c.crashMinDropC;
+    o["crashCph"] = c.crashCph;
+    o["crashReached"] = c.crashReachedEpoch;
+  }
 }
 
 // Legge una camera da un oggetto JSON. Funziona sia su un elemento di "chambers" (v2)
@@ -61,6 +71,9 @@ static void chamberFromJson(ChamberState* c, JsonObjectConst o) {
   c->engine.stableRefGravity = o["stableRefGravity"] | 0.0f;
   c->engine.stableSinceEpoch = o["stableSinceEpoch"] | 0;
   c->engine.rampReanchored = o["rampReanchored"] | false;
+  c->engine.waitingTarget = o["waitTarget"] | false;
+  c->engine.waitTimedOut = o["waitTimedOut"] | false;
+  c->engine.waitingConfirm = o["waitConfirm"] | false;
   c->guard.lastOnEpoch = o["coolLastOn"] | 0;
   c->guard.lastOffEpoch = o["coolLastOff"] | 0;
   c->coolWasOn = o["coolWasOn"] | false;
@@ -71,6 +84,13 @@ static void chamberFromJson(ChamberState* c, JsonObjectConst o) {
   c->ogGravity = o["ogGravity"] | 0.0f;
   c->coolEstCph = o["coolEstCph"] | 0.0f;
   c->heatEstCph = o["heatEstCph"] | 0.0f;
+  c->heatLock = o["heatLock"] | 0;
+  c->heatLockEpoch = o["heatLockAt"] | 0;
+  c->crashStartEpoch = o["crashStart"] | 0;
+  c->crashTargetC = o["crashTarget"] | 0.0f;
+  c->crashMinDropC = o["crashMinDrop"] | 1.5f;
+  c->crashCph = o["crashCph"] | 0.5f;  // cold crash avviati prima della 3.13.0: 0,5 °C/h
+  c->crashReachedEpoch = o["crashReached"] | 0;
 }
 
 // --- load / save -------------------------------------------------------------------
@@ -78,6 +98,7 @@ static void chamberFromJson(ChamberState* c, JsonObjectConst o) {
 bool StateStore::load(PersistState* st) {
   migratedV1_ = false;
   chambersRead_ = 0;
+  discardedChambers_ = 0;
   excessChambers_ = 0;
   File f = LittleFS.open(kPath, "r");
   if (!f) return false;
@@ -130,10 +151,15 @@ bool StateStore::load(PersistState* st) {
     chambersRead_ = (uint8_t)(i + 1);
   }
   // Il file descrive PIU' camere di quante ne gestisce questo firmware: succede
-  // riportando indietro il firmware dopo aver girato con piu' camere. Lo stato in
-  // eccesso viene perso, e perderlo in SILENZIO sarebbe la cosa peggiore.
-  excessChambers_ = chambers.size() > AX_N_CHAMBERS
-                        ? (uint8_t)(chambers.size() - AX_N_CHAMBERS) : 0;
+  // aggiornando dalla 3.0.0 a due camere. Lo stato in eccesso viene perso; perderlo in
+  // SILENZIO sarebbe la cosa peggiore, ma solo se quella camera stava lavorando.
+  for (size_t i = AX_N_CHAMBERS; i < chambers.size() && discardedChambers_ < 255; i++) {
+    JsonObjectConst o = chambers[i];
+    discardedChambers_++;
+    const bool armata = o["armed"] | false;
+    const bool motoreAcceso = (uint8_t)(o["mode"] | 0) != (uint8_t)ax::RunMode::Off;
+    if (armata || motoreAcceso) excessChambers_++;
+  }
   return true;
 }
 

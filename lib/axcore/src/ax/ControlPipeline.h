@@ -48,19 +48,6 @@ class ControlPipeline {
     // I coefficienti appresi NON si toccano: sopravvivono ai salvataggi di config.
   }
 
-  // Identita' della camera per lo sfasamento della finestra PID: due camere non devono
-  // accendere il riscaldante nello stesso istante (la fase deriva da millis(), globale).
-  // Separato da configure(): e' una proprieta' di IDENTITA' della camera, non di
-  // configurazione, e non va persa quando l'utente salva nuovi parametri di regolazione.
-  // Sfasa ENTRAMBI i lati: la finestra PID sul caldo e l'istante di avvio consentito
-  // del compressore sul freddo. Il lato freddo e' a isteresi e non ha una "finestra"
-  // da sfasare, ma i riposi possono sincronizzarsi (stesso epoch dopo un blackout).
-  void setPhaseFraction(uint8_t idx, uint8_t n) {
-    pid_.setPhaseFraction(idx, n);
-    guard_.setStartStagger((uint32_t)idx * staggerStepSec_);
-  }
-  void setStaggerStepSec(uint32_t sec) { staggerStepSec_ = sec; }
-
   // Lo stato dei rele' e' stato forzato dall'ESTERNO (failsafe hardware): quello che la
   // pipeline ricorda non corrisponde piu' alla realta'. Si azzera come nel ramo di fault:
   // i coefficienti APPRESI restano, ma l'osservazione in corso va scartata — gli
@@ -143,8 +130,14 @@ class ControlPipeline {
     if (!allowHeat) {
       want.heat = false;
       if (cfg_.heatUsePid) pid_.reset();  // niente integrale accumulato mentre è vietato
+      // Uno stop imposto da fuori (step, limiti, blocco) non e' l'inerzia dell'impianto:
+      // lo stimatore predittivo non deve impararci sopra.
+      heatEst_.cancelObservation();
     }
-    if (!allowCool) want.cool = false;
+    if (!allowCool) {
+      want.cool = false;
+      coolEst_.cancelObservation();
+    }
     if (want.cool) {
       want.heat = false;  // il freddo ha priorità: mai scaldare mentre si raffredda
       if (cfg_.heatUsePid) pid_.reset();
@@ -184,7 +177,6 @@ class ControlPipeline {
   CompressorGuard guard_;
   Interlock lock_;
   PeakEstimator coolEst_, heatEst_;
-  uint32_t staggerStepSec_ = 0;  // impostato dall'applicazione (ax::kCompressorStaggerSec)
   bool prevCool_ = false, prevHeat_ = false;
 };
 

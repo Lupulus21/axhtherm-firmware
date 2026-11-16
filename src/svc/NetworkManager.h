@@ -7,6 +7,13 @@
 // blocca mai il loop di controllo.
 class NetworkManager {
  public:
+  // Nome e password EFFETTIVI della rete di configurazione: un'unica regola, usata da
+  // begin(), dalla stampa delle credenziali e dall'OLED, cosi' quello che si legge e'
+  // quello che funziona. L'SSID non supera i 32 caratteri del WiFi; una password sotto gli
+  // 8 caratteri del WPA2 viene sostituita da quella di fabbrica.
+  static String apSsidFor(const String& hostname) { return hostname.substring(0, 26) + F("-setup"); }
+  static String apPassFor(const String& pass) { return pass.length() >= 8 ? pass : String(F("axhtherm25")); }
+
   void begin(const String& hostname, const String& ssid, const String& pass, bool dhcp,
              const String& ip, const String& mask, const String& gw, const String& dns,
              const String& apPassword, uint8_t apAfterMin);

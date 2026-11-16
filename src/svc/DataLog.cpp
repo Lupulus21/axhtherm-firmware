@@ -1,18 +1,14 @@
 #include "svc/DataLog.h"
 #include <LittleFS.h>
 
-String DataLog::dayPath(uint32_t epochDay, uint8_t chamber) {
-  String p = String("/log/d") + epochDay;
-  if (chamber) p += String("_") + chamber;  // la camera 0 mantiene il nome storico
-  return p + ".bin";
-}
+String DataLog::dayPath(uint32_t epochDay) { return String("/log/d") + epochDay + ".bin"; }
 
 void DataLog::begin() {
   if (!LittleFS.exists("/log")) LittleFS.mkdir("/log");
 }
 
-bool DataLog::append(const Sample& s, uint8_t chamber) {
-  File f = LittleFS.open(dayPath(s.epoch / 86400, chamber), "a");
+bool DataLog::append(const Sample& s) {
+  File f = LittleFS.open(dayPath(s.epoch / 86400), "a");
   if (!f) return false;
   size_t n = f.write((const uint8_t*)&s, sizeof(s));
   f.close();
@@ -61,18 +57,15 @@ void DataLog::cleanup(uint16_t retentionDays, uint32_t nowEpoch) {
     }
     if (!any || total <= kMaxTotalBytes) break;
     // Si cancella UN file del giorno piu' vecchio, scegliendolo per NOME fra quelli
-    // realmente presenti invece di ricostruire i percorsi da AX_N_CHAMBERS.
+    // realmente presenti invece di ricostruirne il percorso.
     //
-    // Ricostruirli era un difetto reale: l'insieme CONTATO sopra accetta qualsiasi
-    // /log/d*.bin — comprese le camere che questo firmware non conosce piu' — mentre
-    // l'insieme CANCELLATO derivava dalla costante di compilazione. Bastava un orfano
-    // (girare con due camere e poi tornare a una) perche' i due insiemi divergessero:
-    // oldest restava fermo sul giorno dell'orfano, la remove del solo file camera-0
-    // falliva e il ciclo usciva. Da quel momento il tetto di dimensione non liberava
-    // PIU' NULLA, a ogni invocazione, e il registro cresceva fino a riempire la
-    // LittleFS — facendo poi fallire anche i salvataggi di config e stato.
-    // Scegliendo per nome i due insiemi coincidono per costruzione, qualunque sia il
-    // numero di camere che ha scritto i file.
+    // Ricostruirlo era un difetto reale: l'insieme CONTATO sopra accetta qualsiasi
+    // /log/d*.bin — compresi i d<giorno>_1.bin lasciati dal firmware a due camere —
+    // mentre il percorso ricostruito copriva solo d<giorno>.bin. Con un orfano oldest
+    // restava fermo sul suo giorno, la remove falliva e il ciclo usciva: da quel momento
+    // il tetto di dimensione non liberava PIU' NULLA e il registro cresceva fino a
+    // riempire la LittleFS, facendo poi fallire anche i salvataggi di config e stato.
+    // Scegliendo per nome i due insiemi coincidono per costruzione.
     String vittima;
     {
       Dir dir = LittleFS.openDir("/log");
@@ -89,8 +82,7 @@ void DataLog::cleanup(uint16_t retentionDays, uint32_t nowEpoch) {
   }
 }
 
-
-void DataLog::forEach(uint32_t fromEpoch, uint32_t toEpoch, uint8_t chamber,
+void DataLog::forEach(uint32_t fromEpoch, uint32_t toEpoch,
                       const std::function<bool(const Sample&)>& cb) {
   uint32_t fromDay = fromEpoch / 86400;
   uint32_t toDay = toEpoch / 86400;
@@ -98,7 +90,7 @@ void DataLog::forEach(uint32_t fromEpoch, uint32_t toEpoch, uint8_t chamber,
   Sample s;
   for (uint32_t day = fromDay; day <= toDay; day++) {
     yield();  // anche sui giorni senza file: il loop di controllo non deve morire
-    File f = LittleFS.open(dayPath(day, chamber), "r");
+    File f = LittleFS.open(dayPath(day), "r");
     if (!f) continue;
     while (f.read((uint8_t*)&s, sizeof(s)) == sizeof(s)) {
       if (s.epoch < fromEpoch || s.epoch > toEpoch) continue;
@@ -109,4 +101,57 @@ void DataLog::forEach(uint32_t fromEpoch, uint32_t toEpoch, uint8_t chamber,
     }
     f.close();
   }
+}
+
+void DataLog::cursorBegin(Cursor& c, uint32_t fromEpoch, uint32_t toEpoch) {
+  c.fromEpoch = fromEpoch;
+  c.toEpoch = toEpoch;
+  c.day = fromEpoch / 86400;
+  c.toDay = toEpoch / 86400;
+  c.offset = 0;
+  c.done = fromEpoch > toEpoch;
+  if (!c.done && c.toDay - c.day > 400) c.day = c.toDay - 400;  // come forEach
+}
+
+uint16_t DataLog::cursorRead(Cursor& c, uint16_t maxOut, uint16_t maxScan,
+                             const std::function<void(const Sample&)>& cb) {
+  uint16_t out = 0, scanned = 0;
+  Sample s;
+  while (!c.done && out < maxOut && scanned < maxScan) {
+    if (c.day > c.toDay) {
+      c.done = true;
+      break;
+    }
+    File f = LittleFS.open(dayPath(c.day), "r");
+    if (!f) {  // giorno senza file
+      c.day++;
+      c.offset = 0;
+      scanned++;
+      continue;
+    }
+    if (c.offset && !f.seek(c.offset, SeekSet)) {
+      f.close();
+      c.day++;
+      c.offset = 0;
+      continue;
+    }
+    bool eof = false;
+    while (out < maxOut && scanned < maxScan) {
+      if (f.read((uint8_t*)&s, sizeof(s)) != sizeof(s)) {
+        eof = true;
+        break;
+      }
+      c.offset += sizeof(s);
+      scanned++;
+      if (s.epoch < c.fromEpoch || s.epoch > c.toEpoch) continue;
+      cb(s);
+      out++;
+    }
+    f.close();
+    if (eof) {
+      c.day++;
+      c.offset = 0;
+    }
+  }
+  return out;
 }

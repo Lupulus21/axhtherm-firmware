@@ -1,21 +1,14 @@
 #pragma once
 #include <Arduino.h>
 #include <functional>
-#include "ax_dimensions.h"
 
-// Log storico su LittleFS: record binari da 16 byte in file giornalieri.
+// Log storico su LittleFS: record binari da 16 byte in file giornalieri /log/d<epochday>.bin.
 // Append-only (wear-friendly); la retention cancella i file più vecchi.
 //
-// UN FILE PER CAMERA E PER GIORNO. La camera 0 usa /log/d<giorno>.bin — lo stesso
-// percorso della v2.23.2, quindi lo storico esistente resta leggibile senza alcuna
-// conversione — e le altre /log/d<giorno>_<camera>.bin. Il suffisso, invece di un
-// prefisso diverso, è deliberato: cleanup() filtra i file per `startsWith("d")` e ne
-// ricava il giorno con toInt(), che si ferma al primo carattere non numerico. Così i
-// file delle altre camere restano VISIBILI alla retention. Con un prefisso diverso
-// sarebbero stati invisibili e sarebbero cresciuti senza limite.
-//
-// Il record resta di 16 byte, senza campo camera: l'identità sta nel nome del file.
-// Estendere il record avrebbe invece invalidato tutti gli storici già scritti.
+// Il firmware a due camere (3.0.0) scriveva anche /log/d<giorno>_1.bin: sul dispositivo
+// possono restare file così. cleanup() li vede (filtra per `startsWith("d")` e ricava il
+// giorno con toInt(), che si ferma al primo carattere non numerico) e li smaltisce come gli
+// altri, per età e per tetto di dimensione.
 class DataLog {
  public:
   struct __attribute__((packed)) Sample {
@@ -37,15 +30,28 @@ class DataLog {
   static constexpr uint32_t kMaxTotalBytes = 1400000;
 
   void begin();
-  bool append(const Sample& s, uint8_t chamber);
-  // Il tetto di dimensione vale sul TOTALE di tutte le camere: con più camere il log
-  // cresce proporzionalmente e il budget di flash è uno solo.
+  bool append(const Sample& s);
   void cleanup(uint16_t retentionDays, uint32_t nowEpoch);
-  static String dayPath(uint32_t epochDay, uint8_t chamber);
+  static String dayPath(uint32_t epochDay);
 
   // Itera i campioni con epoch in [fromEpoch, toEpoch]; cb ritorna false per fermarsi.
-  void forEach(uint32_t fromEpoch, uint32_t toEpoch, uint8_t chamber,
+  void forEach(uint32_t fromEpoch, uint32_t toEpoch,
                const std::function<bool(const Sample&)>& cb);
+
+  // Lettura a pezzi (3.14.0, export CSV che non ferma la regolazione): giorno e posizione
+  // nel file restano nel cursore fra una chiamata e l'altra, quindi ogni pezzo riparte da
+  // dove si era fermato invece di rileggere il giorno dall'inizio.
+  struct Cursor {
+    uint32_t fromEpoch = 0, toEpoch = 0;
+    uint32_t day = 0, toDay = 0, offset = 0;
+    bool done = true;
+  };
+  static void cursorBegin(Cursor& c, uint32_t fromEpoch, uint32_t toEpoch);
+  // Passa a cb al massimo maxOut campioni dell'intervallo, scorrendone al massimo maxScan
+  // (cosi' anche un tratto senza campioni utili costa un tempo limitato). Ritorna quanti
+  // ne ha passati; c.done diventa true a fine intervallo.
+  uint16_t cursorRead(Cursor& c, uint16_t maxOut, uint16_t maxScan,
+                      const std::function<void(const Sample&)>& cb);
 
   static int16_t encodeTemp(float c, bool valid) {
     return valid ? (int16_t)lroundf(c * 100.0f) : kMissing;

@@ -30,6 +30,12 @@ struct StepDef {
   float stableHours = 48.0f;    // Stable: finestra di stabilità richiesta
   bool allowHeat = true;        // politica di attuazione per step: false = niente caldo
   bool allowCool = true;        // (free-rise: allowHeat=false; crash naturale: allowCool=false)
+  // Fixed: il tempo dello step parte quando il mosto entra nella tolleranza del target, non
+  // all'ingresso nello step ("attendi il target"); al massimo dopo un giorno di attesa.
+  bool waitTarget = false;
+  // "Attendi conferma" (3.16.0, CT-14): a fine step il profilo NON avanza da solo, tiene il
+  // setpoint di fine step e aspetta l'utente (dry hop, campione, travaso).
+  bool confirm = false;
 };
 
 enum class RunMode : uint8_t { Off = 0, Thermostat = 1, Profile = 2 };
@@ -63,6 +69,14 @@ struct EngineSnapshot {
   // (ri-ancorata alla temperatura reale, o al target per un profilo completato) invece di
   // startC — così la copia RAM degli step resta identica al profilo persistito.
   bool rampReanchored = false;
+  // "Attendi il target": lo step Fixed corrente aspetta ancora che il mosto arrivi
+  // (stepStartEpoch e' l'ingresso nello step, poi diventa l'arrivo), e se il tempo e'
+  // partito per scadenza dell'attesa invece che per arrivo.
+  bool waitingTarget = false;
+  bool waitTimedOut = false;
+  // "Attendi conferma": lo step corrente e' finito e aspetta l'utente. Persistito: un
+  // riavvio non deve far avanzare il profilo al posto suo.
+  bool waitingConfirm = false;
 };
 
 }  // namespace ax

@@ -1,15 +1,20 @@
 # Artefatti di build PlatformIO (rigenerabili: pio run -e d1_mini)
 .pio/
 
-# Backup del dispositivo: contengono configurazione reale, SSID, topologia di rete
-# e lo storico delle fermentazioni. NON vanno versionati in un repository pubblico.
+# Generati a ogni build: tools/gzip_assets.py (UI) e tools/build_id.py (commit)
+include/web_assets.h
+include/build_id.h
+
+# Backup del dispositivo: contengono configurazione reale, SSID e password del WiFi,
+# topologia di rete e lo storico delle fermentazioni. NON vanno in un repository pubblico.
 backups/
 
 # Schede di configurazione personali (token, credenziali)
 docs/ISPINDEL_PARAMETRI.md
 
+# Log e binari per le release (allegati, non versionati)
+*.log
+dist/
+
 # macOS
 .DS_Store
-
-# Binari per le release (allegati, non versionati)
-dist/

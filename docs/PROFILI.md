@@ -32,7 +32,7 @@ carica il modello nell'editor e ogni numero va adattato a lievito, OG e gusto.
 | Rampa a tempo / °C/h | come in v2.6 (invariati) |
 | Attesa densità — **soglia** | densità ≤ soglia (SG o °P) |
 | Attesa densità — **% attenuazione** | attenuazione apparente ≥ target % (serve l'OG, catturata automaticamente o impostata a mano; senza OG lo step attende e vale solo il timeout) |
-| Attesa densità — **stabile** | densità ferma entro ±banda per N ore consecutive (finestra che riparte a ogni uscita dalla banda; misurata dentro lo step, quindi fa anche da tempo minimo anti-lag; sopravvive ai riavvii) |
+| Attesa densità — **stabile** | densità ferma entro ±banda per N ore consecutive (finestra che riparte quando la densità esce dalla banda; misurata dentro lo step, quindi fa anche da tempo minimo anti-lag; sopravvive ai riavvii). Dalla 3.16.0 la finestra riparte solo con **due letture di fila** fuori banda: un valore isolato, tipico del rumore di un iSpindel, non fa più ricominciare le 48 ore |
 
 Ogni attesa a densità ha un **timeout di sicurezza** (giorni; 0 = nessuno): un
 densimetro fermo, incrostato di krausen o scarico non blocca mai il profilo
@@ -88,6 +88,78 @@ limite Noonan di 3 °C/giorno).
     due step; poi si ferma il profilo e si bolle). Il Lacto non muove la SG:
     niente trigger a densità.
 13. **Rifermentazione in bottiglia** — 21°×14 g, solo tempo.
+
+## Novità della 3.16.0
+
+- **Aspetta la mia conferma** (casella «fine step» su ogni step): quando lo step finisce il
+  profilo non avanza da solo, tiene il setpoint di fine step e aspetta. In dashboard compare
+  «Conferma e prosegui»; si conferma anche dal pulsante «Conferma step» di Home Assistant o con
+  il comando seriale `conferma`. «Salta step» vale come conferma. L'attesa sopravvive ai
+  riavvii. Serve per i passaggi a mano: dry hop, campione, travaso, aggiunta di frutta.
+  Esempio: «19° fino a 66 % att. ✋conferma» → aggiungi il luppolo, poi conferma e parte il
+  passo successivo.
+- **Fermentazione finita / ferma?**: la scheda calcola l'andamento della densità dalle medie
+  orarie del densimetro. Con la densità ferma da 48 ore (meno di 0,001 SG, circa 0,25 °P) e
+  attenuazione almeno del 50% segnala «fermentazione finita»; se invece è ferma sopra l'atteso
+  (attenuazione sotto il 50%, o uno step a densità con la soglia non ancora raggiunta)
+  segnala «fermentazione ferma?». Sono avvisi: non cambiano la regolazione né fanno avanzare
+  il profilo.
+
+## Novità della 3.12.0
+
+- **Attendi il target** (casella «parte all'arrivo in temperatura» sugli step a temperatura
+  fissa): il tempo dello step parte quando il mosto entra nella tolleranza del target, non
+  quando lo step comincia. «18 °C × 3 giorni» partendo da un mosto a 22 °C vuol dire 3 giorni
+  a 18, non 3 giorni meno il tempo della discesa. Se in 24 ore il mosto non ci arriva, il tempo
+  parte comunque e la dashboard lo segnala («STEP PARTITO SENZA IL TARGET»): un frigo che non ce
+  la fa non deve bloccare il profilo per sempre. Con un setpoint manuale attivo l'arrivo si misura
+  su quello; un blackout lungo durante l'attesa la fa ripartire da capo al ritorno. Per gli step a rampa resta la rampa °C/h, che
+  già aspetta il target.
+- **Ripresa dopo un blackout lungo**: se uno step è scaduto mentre la scheda era spenta (da più
+  di 10 minuti), al ritorno si avanza di **uno** step solo, e quello nuovo parte da quel momento.
+  Prima si avanzavano tutti gli step scaduti, ciascuno con inizio nel passato: una sosta mai
+  avvenuta, con il controllo spento, risultava fatta. Le interruzioni brevi (riavvio,
+  aggiornamento) non spostano gli step.
+- **Export con l'unità di densità**: il file di un profilo porta `unit` (`sg` o `plato`);
+  all'import su una scheda con l'altra unità le soglie «densità sotto» e le bande di stabilità
+  si convertono. Un file senza unità (versioni precedenti) si importa com'è, con un avviso.
+- **Backup della libreria** (scheda Profili): «Scarica tutta la libreria» mette tutti i profili
+  in un file; «Ripristina libreria…» li ricarica, saltando quelli con un nome già presente e
+  convertendo l'unità se serve.
+
+## Cold crash dalla dashboard (dalla 3.11.0)
+
+Dashboard → Marcia → «cold crash fino a» e «Esegui cold crash», con il termostato o un profilo
+in corso. Il piano è uno solo, scelto il 28/10/2026:
+
+- **discesa di 3 °C ogni 6 ore** (0,5 °C/h) oppure, dalla 3.13.0, **1,5 °C ogni 6 ore**
+  (0,25 °C/h, più dolce), dalla temperatura attuale al target (−1…12 °C), con il riscaldamento
+  disattivato;
+- quando il mosto **arriva** alla temperatura (entro la tolleranza) lo segnala in dashboard,
+  sull'OLED («COLD CRASH: OK») e in Home Assistant («Cold crash raggiunto»), e da lì **la mantiene
+  finché non fermi il profilo**: non c'è una durata;
+- se il frigo è più lento del programma va bene, ma se in 6 ore il mosto scende meno della
+  **soglia** impostata scatta l'allarme «COLD CRASH LENTO». Proposta: metà di quanto il
+  programma scende in 6 ore (1,5 °C a 0,5 °C/h, 0,75 °C a 0,25 °C/h); massimo due terzi (2 °C e
+  1 °C), perché vicino al programma l'allarme si accenderebbe anche con il frigo in regola;
+- la dashboard mostra la **stima d'arrivo**: dalla discesa reale delle ultime ore (dopo la
+  prima ora), prima sulla velocità programmata;
+- **antigelo**: con il caldo disattivato e un setpoint fino a 4 °C, se il mosto scende di oltre
+  1 °C sotto il setpoint (garage sotto zero) il caldo si riaccende finché non risale a mezzo
+  grado. Vale per ogni step senza caldo con setpoint freddo, non solo per il cold crash. Se non
+  basta (mosto sotto −2 °C, o 2 °C sotto il setpoint) scatta «MOSTO TROPPO FREDDO».
+
+Non si avvia con il mosto già sotto il target: in quel caso si usa il termostato.
+
+**Rampe lente e risoluzione delle sonde.** La rampa non la «legge» la sonda: la fa il setpoint,
+che scende in modo continuo calcolato sul tempo, e il controllo tiene il mosto vicino a quel
+setpoint. A 0,25 °C/h il setpoint scende di 0,0625 °C, cioè un passo della DS18B20 a 12 bit, ogni
+15 minuti. La risoluzione limita quanto bene si sa dov'è il mosto in un istante, non la velocità
+media: in 4 ore il setpoint scende di 1 °C, 16 passi. La precisione assoluta (±0,5 °C) non conta
+per una pendenza, perché un errore costante sposta tutte le letture allo stesso modo. Il limite
+vero è il frigo, acceso o spento: il mosto oscilla dentro la tolleranza e la sua massa media i
+cicli, così la discesa reale è una scala a gradini piccoli che sulle ore segue la rampa. Il
+modello «lager tradizionale» usa già 0,1 °C/h con lo stesso meccanismo.
 
 ## Note operative
 

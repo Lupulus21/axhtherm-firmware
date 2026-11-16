@@ -13,6 +13,23 @@
 #include "ax/ProfileEngine.h"
 #include "ax/GravityTracker.h"
 #include "ax/SafetyMonitor.h"
+#include "ax/HeaterGuard.h"
+#include "ax/SlopeEstimator.h"
+#include "ax/AirLimit.h"
+#include "ax/CoolWatch.h"
+#include "ax/RetryPenalty.h"
+#include "ax/FwImageCheck.h"
+#include "ax/ProbeFault.h"
+#include "ax/ProbeOffsets.h"
+#include "ax/CrashMonitor.h"
+#include "ax/MinMaxGroup.h"
+#include "ax/EventRing.h"
+#include "ax/GravityTrend.h"
+#include "ax/FanControl.h"
+#include <strings.h>
+#include <stdio.h>
+#include <string>
+#include <vector>
 
 using namespace ax;
 
@@ -90,44 +107,6 @@ static void test_compressor_rest_across_reboot() {
   TEST_ASSERT_FALSE(g2.canStart(T0 + 700));   // 100 s dopo lo stop: bloccato
   TEST_ASSERT_TRUE(g2.blockedForSec(T0 + 700) == 200);
   TEST_ASSERT_TRUE(g2.canStart(T0 + 901));    // 301 s dopo lo stop: ok
-}
-
-// Dopo un blackout tutte le camere chiamano assumeJustStopped() con lo STESSO epoch:
-// senza sfasamento i riposi scadrebbero nello stesso secondo e i compressori
-// partirebbero insieme, sommando spunti di corrente di 5-8x la corrente di marcia.
-static void test_compressor_stagger_desynchronizes_starts() {
-  CompressorGuard a, b;
-  a.configure(300, 60);
-  b.configure(300, 60);
-  a.setStartStagger(0);   // camera 0
-  b.setStartStagger(30);  // camera 1
-  const uint32_t t0 = 1000000;
-  a.assumeJustStopped(t0);  // stesso identico istante: e' il caso del blackout
-  b.assumeJustStopped(t0);
-
-  TEST_ASSERT_FALSE(a.canStart(t0 + 299));
-  TEST_ASSERT_TRUE(a.canStart(t0 + 300));   // camera 0: riposo pieno
-  TEST_ASSERT_FALSE(b.canStart(t0 + 300));  // camera 1: ancora bloccata
-  TEST_ASSERT_FALSE(b.canStart(t0 + 329));
-  TEST_ASSERT_TRUE(b.canStart(t0 + 330));   // ...parte 30 s dopo
-
-  // Il conto alla rovescia mostrato all'utente deve riflettere lo sfasamento.
-  TEST_ASSERT_EQUAL_UINT32(30, b.blockedForSec(t0 + 300));
-  TEST_ASSERT_EQUAL_UINT32(0, a.blockedForSec(t0 + 300));
-}
-
-// Lo sfasamento non deve MAI accorciare il riposo: e' una protezione, non un tuning.
-static void test_compressor_stagger_never_shortens_rest() {
-  CompressorGuard g;
-  g.configure(300, 60);
-  const uint32_t t0 = 1000000;
-  g.assumeJustStopped(t0);
-  for (uint32_t st = 0; st <= 120; st += 30) {
-    g.setStartStagger(st);
-    TEST_ASSERT_FALSE(g.canStart(t0 + 299));       // mai prima del riposo nominale
-    TEST_ASSERT_FALSE(g.canStart(t0 + 300 + st - 1));
-    TEST_ASSERT_TRUE(g.canStart(t0 + 300 + st));
-  }
 }
 
 static void test_compressor_rtc_untrusted_assumes_not_elapsed() {
@@ -314,56 +293,6 @@ static void test_pid_window_output() {
   TEST_ASSERT_FALSE(pid.windowOutput(6000));  // 6 s: OFF
 }
 
-// Due camere che condividono windowMs NON devono accendere il riscaldante nello stesso
-// istante: la fase deriva da millis(), che è globale. Senza sfasamento i due spunti di
-// corrente si sommerebbero sullo stesso alimentatore a ogni finestra.
-static void test_pid_window_phase_offset_desynchronizes() {
-  PidController a, b;
-  PidController::Cfg c;
-  c.kp = 10.0f; c.ki = 0.0f; c.kd = 0.0f;
-  c.windowMs = 10000;
-  c.fullPowerBelow = 50.0f;
-  a.configure(c);
-  b.configure(c);
-  a.setPhaseFraction(0, 2);  // camera 0 di 2
-  b.setPhaseFraction(1, 2);  // camera 1 di 2
-  a.update(20.0f, 15.0f, 1.0f);  // e=5 -> duty 50%
-  b.update(20.0f, 15.0f, 1.0f);
-  TEST_ASSERT_EQUAL_FLOAT(50.0f, a.duty());
-  TEST_ASSERT_EQUAL_FLOAT(50.0f, b.duty());
-
-  uint16_t insieme = 0, accesiA = 0, accesiB = 0;
-  for (uint32_t t = 0; t < 20000; t += 100) {  // due finestre intere
-    const bool oa = a.windowOutput(t), ob = b.windowOutput(t);
-    if (oa && ob) insieme++;
-    if (oa) accesiA++;
-    if (ob) accesiB++;
-  }
-  TEST_ASSERT_EQUAL_UINT16(0, insieme);   // mai accesi insieme
-  TEST_ASSERT_EQUAL_UINT16(100, accesiA); // ciascuno acceso metà del tempo
-  TEST_ASSERT_EQUAL_UINT16(100, accesiB);
-}
-
-// Il default (idx 0 di 1) NON deve spostare la fase: con una sola camera il
-// comportamento resta identico a quello precedente all'introduzione dello sfasamento.
-static void test_pid_window_phase_default_is_unshifted() {
-  PidController pid, esplicito;
-  PidController::Cfg c;
-  c.kp = 10.0f; c.ki = 0.0f; c.kd = 0.0f;
-  c.windowMs = 10000;
-  c.fullPowerBelow = 50.0f;
-  pid.configure(c);
-  esplicito.configure(c);
-  esplicito.setPhaseFraction(0, 1);  // unica camera: offset 0
-  pid.update(20.0f, 15.0f, 1.0f);
-  esplicito.update(20.0f, 15.0f, 1.0f);
-  for (uint32_t t = 0; t < 10000; t += 250) {
-    TEST_ASSERT_EQUAL(pid.windowOutput(t), esplicito.windowOutput(t));
-  }
-  TEST_ASSERT_TRUE(pid.windowOutput(1000));   // identico al test storico
-  TEST_ASSERT_FALSE(pid.windowOutput(6000));
-}
-
 // ---------- ProfileEngine ----------
 
 static StepDef fixedStep(float t, uint32_t durSec) {
@@ -452,14 +381,114 @@ static void test_profile_blackout_past_multiple_steps() {
   e2.configure(0.5f);
   e2.setSteps(steps, 3);
   e2.restore(snap);
-  // Blackout di 2h30: al risveglio deve trovarsi nello step 3 (iniziato a T0+7200).
+  // Blackout di 2h30 (dalla 3.12.0, rilievo CT-16): lo step 1 e' scaduto durante
+  // l'interruzione. Si avanza di UNO solo e lo step 2 parte da adesso: la sosta a 20 °C non
+  // e' mai avvenuta, con il controllo spento, e non va data per fatta.
   ProfileEngine::TickInput in{};
   in.nowEpoch = T0 + 9000; in.tempC = 20.0f; in.tempValid = true;
   ProfileEngine::TickOutput out = e2.tick(in);
-  TEST_ASSERT_EQUAL_UINT8(2, e2.stepIdx());
-  TEST_ASSERT_EQUAL_UINT32(T0 + 7200, e2.stepStartEpoch());
-  TEST_ASSERT_EQUAL_FLOAT(22.0f, out.setpointC);
+  TEST_ASSERT_EQUAL_UINT8(1, e2.stepIdx());
+  TEST_ASSERT_EQUAL_UINT32(T0 + 9000, e2.stepStartEpoch());
+  TEST_ASSERT_EQUAL_FLOAT(20.0f, out.setpointC);
   TEST_ASSERT_FALSE(e2.completed());
+  // Il tick dopo non avanza ancora: lo step 2 ha appena cominciato.
+  in.nowEpoch = T0 + 9001;
+  e2.tick(in);
+  TEST_ASSERT_EQUAL_UINT8(1, e2.stepIdx());
+}
+
+static void test_profile_interruzione_breve_tiene_il_passo() {
+  // Un'interruzione sotto i 10 minuti (riavvio, aggiornamento) non sposta gli step: il
+  // successivo parte dall'istante in cui il precedente e' scaduto davvero.
+  ProfileEngine e;
+  e.configure(0.5f);
+  StepDef steps[2] = {fixedStep(18.0f, 3600), fixedStep(20.0f, 3600)};
+  e.setSteps(steps, 2);
+  e.startProfile(T0, 18.0f, true);
+  ProfileEngine::TickInput in{};
+  in.nowEpoch = T0 + 3600 + 300; in.tempC = 18.0f; in.tempValid = true;
+  e.tick(in);
+  TEST_ASSERT_EQUAL_UINT8(1, e.stepIdx());
+  TEST_ASSERT_EQUAL_UINT32(T0 + 3600, e.stepStartEpoch());
+}
+
+static void test_profile_attendi_il_target() {
+  ProfileEngine e;
+  e.configure(0.5f);
+  StepDef steps[2] = {fixedStep(18.0f, 2 * 3600), fixedStep(20.0f, 3600)};
+  steps[0].waitTarget = true;
+  e.setSteps(steps, 2);
+  e.startProfile(T0, 22.0f, true);  // mosto a 22 °C, step a 18
+  ProfileEngine::TickInput in{};
+  in.tempValid = true;
+  // Dopo 3 ore il mosto e' a 19: ancora fuori tolleranza, il tempo non conta.
+  in.nowEpoch = T0 + 3 * 3600; in.tempC = 19.0f;
+  ProfileEngine::TickOutput out = e.tick(in);
+  TEST_ASSERT_TRUE(out.waitingTarget);
+  TEST_ASSERT_EQUAL_UINT8(0, e.stepIdx());
+  TEST_ASSERT_EQUAL_FLOAT(18.0f, out.setpointC);
+  TEST_ASSERT_EQUAL_UINT32(0, e.stepEndsAtEpoch());
+  // Il mosto arriva a 18,3: da qui partono le 2 ore dello step.
+  in.nowEpoch = T0 + 4 * 3600; in.tempC = 18.3f;
+  out = e.tick(in);
+  TEST_ASSERT_FALSE(out.waitingTarget);
+  TEST_ASSERT_TRUE(out.stepChanged);
+  TEST_ASSERT_EQUAL_UINT32(T0 + 4 * 3600, e.stepStartEpoch());
+  TEST_ASSERT_FALSE(e.snapshot().waitTimedOut);
+  // Il riavvio non perde il punto: lo stato si salva e si ripristina.
+  ProfileEngine e2;
+  e2.configure(0.5f);
+  e2.setSteps(steps, 2);
+  e2.restore(e.snapshot());
+  in.nowEpoch = T0 + 5 * 3600 + 1800; in.tempC = 18.0f;
+  e2.tick(in);
+  TEST_ASSERT_EQUAL_UINT8(0, e2.stepIdx());   // 1h30 dall'arrivo: non ancora
+  in.nowEpoch = T0 + 6 * 3600 + 1; in.tempC = 18.0f;
+  e2.tick(in);
+  TEST_ASSERT_EQUAL_UINT8(1, e2.stepIdx());   // 2 ore dall'arrivo: avanti
+}
+
+static void test_profile_attendi_il_target_scade() {
+  // Il frigo non ce la fa: dopo 24 ore il tempo parte comunque, e lo si segnala.
+  ProfileEngine e;
+  e.configure(0.5f);
+  StepDef s = fixedStep(10.0f, 3600);
+  s.waitTarget = true;
+  e.setSteps(&s, 1);
+  e.startProfile(T0, 14.0f, true);
+  ProfileEngine::TickInput in{};
+  in.tempValid = true; in.tempC = 12.0f;
+  in.nowEpoch = T0 + 24 * 3600 - 1;
+  TEST_ASSERT_TRUE(e.tick(in).waitingTarget);
+  in.nowEpoch = T0 + 24 * 3600;
+  ProfileEngine::TickOutput out = e.tick(in);
+  TEST_ASSERT_FALSE(out.waitingTarget);
+  TEST_ASSERT_TRUE(e.snapshot().waitTimedOut);
+  TEST_ASSERT_EQUAL_UINT32(T0 + 24 * 3600 + 3600, e.stepEndsAtEpoch());
+}
+
+static void test_profile_attendi_il_target_blackout() {
+  // Blackout di due giorni durante l'attesa: il mosto non ha mai potuto arrivare, l'attesa
+  // riparte da adesso invece di far partire il tempo dello step.
+  ProfileEngine e;
+  e.configure(0.5f);
+  StepDef s = fixedStep(10.0f, 3600);
+  s.waitTarget = true;
+  e.setSteps(&s, 1);
+  e.startProfile(T0, 14.0f, true);
+  ProfileEngine::TickInput in{};
+  in.tempValid = true; in.tempC = 13.0f;
+  in.nowEpoch = T0 + 48 * 3600;
+  ProfileEngine::TickOutput out = e.tick(in);
+  TEST_ASSERT_TRUE(out.waitingTarget);
+  TEST_ASSERT_EQUAL_UINT32(T0 + 48 * 3600, e.stepStartEpoch());
+  TEST_ASSERT_FALSE(e.snapshot().waitTimedOut);
+  // Con un setpoint manuale a 12 °C l'arrivo si misura su quello.
+  e.overrideSetpoint(12.0f);
+  in.nowEpoch = T0 + 49 * 3600; in.tempC = 12.2f;
+  out = e.tick(in);
+  TEST_ASSERT_FALSE(out.waitingTarget);
+  TEST_ASSERT_FALSE(e.snapshot().waitTimedOut);
 }
 
 static void test_profile_ramp_rate() {
@@ -714,9 +743,14 @@ static void test_profile_eight_steps() {
   ProfileEngine::TickInput in{};
   in.tempC = 18.0f;
   in.tempValid = true;
-  in.nowEpoch = T0 + 7 * 3600 + 10;  // dentro l'ottavo step
-  ProfileEngine::TickOutput out = e.tick(in);
-  TEST_ASSERT_EQUAL_UINT8(7, e.stepIdx());
+  // Un tick per ora, come in marcia: un salto di ore in un tick solo sarebbe una ripresa
+  // dopo un'interruzione, che avanza di uno step soltanto.
+  ProfileEngine::TickOutput out;
+  for (int h = 1; h <= 7; h++) {
+    in.nowEpoch = T0 + h * 3600 + 10;
+    out = e.tick(in);
+  }
+  TEST_ASSERT_EQUAL_UINT8(7, e.stepIdx());  // dentro l'ottavo step
   TEST_ASSERT_EQUAL_FLOAT(22.0f, out.setpointC);
   TEST_ASSERT_FALSE(e.completed());
   in.nowEpoch = T0 + 8 * 3600 + 1;
@@ -962,6 +996,28 @@ static void test_pipeline_estimators_learn_even_when_predictive_off() {
   TEST_ASSERT_TRUE(p.coolEstimatorCph() > 0.5f);  // ha imparato (deriva 0.2 su 301 s)
 }
 
+static void test_pipeline_stop_forzato_non_insegna() {
+  // Stesso ciclo del test precedente, ma lo stop lo impone un divieto (limite sull'aria):
+  // la deriva che segue non e' inerzia dell'impianto e non deve insegnare nulla.
+  ControlPipeline p;
+  ControlPipeline::Cfg c = pipeCfgHyst();
+  c.predictive = false;
+  c.compressorRestSec = 0;
+  p.configure(c);
+  ControlPipeline::Status st = p.tick(T0, 0, true, 20.0f, true, 20.6f, true, 1.0f);
+  TEST_ASSERT_TRUE(st.cool);
+  uint32_t s = 1;
+  for (; s <= 300; s++) st = p.tick(T0 + s, s * 1000, true, 20.0f, true, 20.6f, true, 1.0f);
+  TEST_ASSERT_TRUE(st.cool);
+  for (int i = 0; i < 200; i++, s++) {  // freddo vietato: deriva in discesa per 200 s
+    st = p.tick(T0 + s, s * 1000, true, 20.0f, true, 20.6f - (i + 1) * 0.001f, true, 1.0f,
+                true, false);
+    TEST_ASSERT_FALSE(st.cool);
+  }
+  p.tick(T0 + s, s * 1000, true, 20.0f, true, 20.55f, true, 1.0f);  // consenso tornato
+  TEST_ASSERT_EQUAL_FLOAT(0.0f, p.coolEstimatorCph());
+}
+
 static void test_pipeline_opposite_side_discards_observation() {
   // Il caldo che parte mentre si osserva la deriva post-freddo contamina il
   // campione: va scartato, il coefficiente freddo non deve cambiare.
@@ -1065,32 +1121,9 @@ static void test_gravity_timeout_beats_stale_sensor() {
   TEST_ASSERT_TRUE(e.completed());
 }
 
-static void test_gravity_nessuna_sorgente_non_scade_mai() {
-  // D7: camera SENZA densimetro assegnato. Il timeout non deve avanzare lo step:
-  // avanzerebbe alla cieca, senza aver mai misurato, mandando tipicamente la
-  // camera al cold crash su una fermentazione ancora attiva.
-  ProfileEngine e;
-  e.configure(0.5f);
-  StepDef s = gravStep(20.0f, ax::GravityMode::Below, 1.010f, 3 * 86400);
-  e.setSteps(&s, 1);
-  e.startProfile(T0, 20.0f, true);
-  ProfileEngine::TickInput in{};
-  in.tempC = 20.0f; in.tempValid = true;
-  in.gravityValid = false; in.gravityFresh = false;  // nessuna lettura, mai
-  in.gravitySourceMissing = true;                    // ...e nessuna sorgente assegnata
-  in.nowEpoch = T0 + 3 * 86400 + 1;                  // ben oltre il timeout
-  ProfileEngine::TickOutput out = e.tick(in);
-  TEST_ASSERT_FALSE(e.completed());
-  TEST_ASSERT_TRUE(out.waitingGravity);
-  in.nowEpoch = T0 + 30 * 86400;  // un mese dopo: ancora fermo
-  out = e.tick(in);
-  TEST_ASSERT_FALSE(e.completed());
-  TEST_ASSERT_TRUE(out.waitingGravity);
-}
-
 static void test_gravity_sorgente_presente_ma_muta_scade_ancora() {
-  // Il contrario del precedente: sorgente ASSEGNATA ma muta. Qui il timeout deve
-  // continuare a funzionare come prima — e' la rete di sicurezza per cui esiste.
+  // Densimetro muto: il timeout deve far avanzare lo step, e' la rete di sicurezza
+  // per cui esiste (un densimetro incrostato non tiene in ostaggio il profilo).
   ProfileEngine e;
   e.configure(0.5f);
   StepDef s = gravStep(20.0f, ax::GravityMode::Below, 1.010f, 3 * 86400);
@@ -1099,26 +1132,7 @@ static void test_gravity_sorgente_presente_ma_muta_scade_ancora() {
   ProfileEngine::TickInput in{};
   in.tempC = 20.0f; in.tempValid = true;
   in.gravityValid = false; in.gravityFresh = false;
-  in.gravitySourceMissing = false;  // assegnata, ma non trasmette
   in.nowEpoch = T0 + 3 * 86400 + 1;
-  e.tick(in);
-  TEST_ASSERT_TRUE(e.completed());
-}
-
-static void test_gravity_sorgente_assente_ma_dato_valido_avanza() {
-  // Caso limite: la sorgente risulta "assente" ma una lettura valida c'e' comunque
-  // (es. OG immessa a mano e densimetro riassegnato). La condizione di densita'
-  // deve poter essere soddisfatta: il flag disabilita SOLO la scorciatoia del timeout.
-  ProfileEngine e;
-  e.configure(0.5f);
-  StepDef s = gravStep(20.0f, ax::GravityMode::Below, 1.010f, 3 * 86400);
-  e.setSteps(&s, 1);
-  e.startProfile(T0, 20.0f, true);
-  ProfileEngine::TickInput in{};
-  in.tempC = 20.0f; in.tempValid = true;
-  in.gravity = 1.008f; in.gravityValid = true; in.gravityFresh = true;
-  in.gravitySourceMissing = true;
-  in.nowEpoch = T0 + 3600;
   e.tick(in);
   TEST_ASSERT_TRUE(e.completed());
 }
@@ -1272,9 +1286,12 @@ static void test_profile_twelve_steps() {
   e.startProfile(T0, 10.0f, true);
   ProfileEngine::TickInput in{};
   in.tempC = 15.0f; in.tempValid = true;
-  in.nowEpoch = T0 + 11 * 3600 + 10;  // dentro il 12° step
-  ProfileEngine::TickOutput out = e.tick(in);
-  TEST_ASSERT_EQUAL_UINT8(11, e.stepIdx());
+  ProfileEngine::TickOutput out;
+  for (int h = 1; h <= 11; h++) {  // un tick per ora, come in marcia
+    in.nowEpoch = T0 + h * 3600 + 10;
+    out = e.tick(in);
+  }
+  TEST_ASSERT_EQUAL_UINT8(11, e.stepIdx());  // dentro il 12° step
   TEST_ASSERT_EQUAL_FLOAT(21.0f, out.setpointC);
   in.nowEpoch = T0 + 12 * 3600 + 1;
   e.tick(in);
@@ -1556,6 +1573,803 @@ static void test_safety_monitor_alarm_only_flags() {
 void setUp() {}
 void tearDown() {}
 
+// ---------- HeaterGuard (rilevatori di guasto del riscaldatore) ----------
+
+// Esegue n tick da 1 s con lo stesso ingresso; ritorna il primo blocco (o None).
+static HeatLock hgRun(HeaterGuard& g, uint32_t n, float t, float sp, bool heat, bool cool,
+                      float dTperTick = 0.0f, bool active = true, bool valid = true) {
+  for (uint32_t i = 0; i < n; i++) {
+    HeatLock r = g.tick(1.0f, active, valid, t, true, sp, heat, cool);
+    if (r != HeatLock::None) return r;
+    t += dTperTick;
+  }
+  return HeatLock::None;
+}
+
+static void test_heater_timeout_scatta_al_limite() {
+  HeaterGuard g;
+  HeaterGuard::Cfg c; c.maxOnSec = 3600; c.stuckSec = 0;  // solo il tempo massimo
+  g.configure(c);
+  TEST_ASSERT_EQUAL(HeatLock::None, hgRun(g, 3599, 18.0f, 20.0f, true, false));
+  TEST_ASSERT_EQUAL(HeatLock::HeatTimeout, hgRun(g, 1, 18.0f, 20.0f, true, false));
+}
+
+static void test_heater_timeout_si_azzera_quando_il_caldo_si_spegne() {
+  // PID a finestra: il caldo si accende e spegne, non e' mai continuo -> nessun blocco.
+  HeaterGuard g;
+  HeaterGuard::Cfg c; c.maxOnSec = 600; c.stuckSec = 0;
+  g.configure(c);
+  for (int k = 0; k < 100; k++) {
+    TEST_ASSERT_EQUAL(HeatLock::None, hgRun(g, 300, 19.5f, 20.0f, true, false));
+    TEST_ASSERT_EQUAL(HeatLock::None, hgRun(g, 30, 19.5f, 20.0f, false, false));
+  }
+}
+
+static void test_heater_sonda_ferma_a_caldo_pieno() {
+  HeaterGuard g;
+  HeaterGuard::Cfg c; c.stuckSec = 3600; c.maxOnSec = 0;
+  g.configure(c);
+  // Sonda congelata a 18,0 °C con il caldo acceso di continuo.
+  TEST_ASSERT_EQUAL(HeatLock::None, hgRun(g, 3599, 18.0f, 20.0f, true, false));
+  TEST_ASSERT_EQUAL(HeatLock::ProbeStuck, hgRun(g, 1, 18.0f, 20.0f, true, false));
+}
+
+static void test_heater_sonda_che_sale_non_blocca() {
+  HeaterGuard g;
+  HeaterGuard::Cfg c; c.stuckSec = 3600; c.maxOnSec = 0;
+  g.configure(c);
+  // 0,3 °C/h: lento ma reale. Per tre finestre di fila non deve scattare.
+  TEST_ASSERT_EQUAL(HeatLock::None, hgRun(g, 3 * 3600, 15.0f, 20.0f, true, false, 0.3f / 3600));
+}
+
+static void test_heater_sonda_che_si_ferma_dopo_aver_salito() {
+  // Sale per un'ora, poi la sonda si congela: deve scattare nella finestra successiva.
+  HeaterGuard g;
+  HeaterGuard::Cfg c; c.stuckSec = 3600; c.maxOnSec = 0;
+  g.configure(c);
+  TEST_ASSERT_EQUAL(HeatLock::None, hgRun(g, 3600, 15.0f, 20.0f, true, false, 1.0f / 3600));
+  TEST_ASSERT_EQUAL(HeatLock::ProbeStuck, hgRun(g, 3600, 16.0f, 20.0f, true, false));
+}
+
+static void test_heater_salita_a_caldo_spento() {
+  HeaterGuard g;
+  g.configure(HeaterGuard::Cfg{});
+  // Dentro i 10 minuti di assestamento una salita non conta (calore residuo del tappetino).
+  TEST_ASSERT_EQUAL(HeatLock::None, hgRun(g, 599, 20.0f, 20.0f, false, false, 1.5f / 600));
+  // Dopo l'assestamento: +1,2 °C in 15 minuti a caldo spento -> SSR incollato.
+  TEST_ASSERT_EQUAL(HeatLock::RiseHeatOff, hgRun(g, 900, 21.5f, 20.0f, false, false, 1.2f / 900));
+}
+
+static void test_heater_lenta_deriva_a_caldo_spento_non_blocca() {
+  // Fermentazione esotermica: +0,5 °C/h senza freddo -> nessun blocco.
+  HeaterGuard g;
+  g.configure(HeaterGuard::Cfg{});
+  TEST_ASSERT_EQUAL(HeatLock::None, hgRun(g, 6 * 3600, 18.0f, 18.0f, false, false, 0.5f / 3600));
+}
+
+static void test_heater_freddo_inefficace() {
+  HeaterGuard g;
+  g.configure(HeaterGuard::Cfg{});
+  // Freddo acceso, 3 °C sopra il setpoint, temperatura ferma per 2 ore.
+  TEST_ASSERT_EQUAL(HeatLock::None, hgRun(g, 7199, 21.0f, 18.0f, false, true));
+  TEST_ASSERT_EQUAL(HeatLock::CoolIneffective, hgRun(g, 1, 21.0f, 18.0f, false, true));
+}
+
+static void test_heater_freddo_che_raffredda_non_blocca() {
+  // Pull-down reale: -1 °C/h col freddo acceso per 6 ore.
+  HeaterGuard g;
+  g.configure(HeaterGuard::Cfg{});
+  TEST_ASSERT_EQUAL(HeatLock::None, hgRun(g, 6 * 3600, 24.0f, 10.0f, false, true, -1.0f / 3600));
+}
+
+static void test_heater_freddo_vicino_al_setpoint_non_blocca() {
+  // Cold crash al limite del frigo: 1,8 °C sopra il setpoint a -1, fermo. Non e' un guasto
+  // del riscaldatore: sotto la soglia coolAboveSpC il rilevatore non guarda.
+  HeaterGuard g;
+  g.configure(HeaterGuard::Cfg{});
+  TEST_ASSERT_EQUAL(HeatLock::None, hgRun(g, 6 * 3600, 0.8f, -1.0f, false, true));
+}
+
+static void test_heater_salto_della_sonda_non_blocca() {
+  // Sonda spostata da un frigo a 2 °C al pozzetto di un mosto a 20 °C, a caldo spento:
+  // e' un salto istantaneo, non la rampa di un riscaldatore incollato.
+  HeaterGuard g;
+  g.configure(HeaterGuard::Cfg{});
+  TEST_ASSERT_EQUAL(HeatLock::None, hgRun(g, 1200, 2.0f, 18.0f, false, false));
+  TEST_ASSERT_EQUAL(HeatLock::None, hgRun(g, 3600, 20.0f, 18.0f, false, false));
+  // Dopo il salto il rilevatore resta attivo: una rampa vera scatta ancora.
+  TEST_ASSERT_EQUAL(HeatLock::RiseHeatOff, hgRun(g, 900, 20.0f, 18.0f, false, false, 1.2f / 900));
+}
+
+static void test_heater_disarmato_azzera_e_sonda_invalida_congela() {
+  HeaterGuard g;
+  HeaterGuard::Cfg c; c.maxOnSec = 100; c.stuckSec = 0;
+  g.configure(c);
+  TEST_ASSERT_EQUAL(HeatLock::None, hgRun(g, 90, 18.0f, 20.0f, true, false));
+  // Sonda invalida per 50 s: si congela, non si accumula.
+  TEST_ASSERT_EQUAL(HeatLock::None, hgRun(g, 50, 18.0f, 20.0f, true, false, 0, true, false));
+  TEST_ASSERT_EQUAL(HeatLock::HeatTimeout, hgRun(g, 10, 18.0f, 20.0f, true, false));
+  // Disarmo: tutto azzerato, si riparte da zero.
+  g.reset();
+  TEST_ASSERT_EQUAL(HeatLock::None, hgRun(g, 90, 18.0f, 20.0f, true, false));
+  TEST_ASSERT_EQUAL(HeatLock::None, hgRun(g, 1, 18.0f, 20.0f, true, false, 0, false));
+  TEST_ASSERT_EQUAL(HeatLock::None, hgRun(g, 99, 18.0f, 20.0f, true, false));
+}
+
+// Scratchpad DS18B20 integro con la temperatura grezza `raw` e il registro `cfg`.
+static void spFill(uint8_t sp[9], int16_t raw, uint8_t cfg = 0x7F) {
+  sp[0] = (uint8_t)(raw & 0xFF); sp[1] = (uint8_t)((uint16_t)raw >> 8);
+  sp[2] = 0x4B; sp[3] = 0x46; sp[4] = cfg; sp[5] = 0xFF; sp[6] = 0x0C; sp[7] = 0x10;
+  sp[8] = dallasCrc8(sp, 8);
+}
+
+static void test_sonda_classificazione_guasti() {
+  // CRC-8 Dallas: esempio della nota applicativa Maxim 27 (famiglia 02, CRC A2).
+  const uint8_t rom[7] = {0x02, 0x1C, 0xB8, 0x01, 0x00, 0x00, 0x00};
+  TEST_ASSERT_EQUAL_HEX8(0xA2, dallasCrc8(rom, 7));
+  uint8_t sp[9];
+  float t = -99.0f;
+  spFill(sp, 344);  // 21,5 °C
+  TEST_ASSERT_EQUAL(ProbeFault::None, classifyScratchpad(true, sp, 0x28, -20.0f, 60.0f, &t));
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 21.5f, t);
+  spFill(sp, -162);  // -10,125 °C
+  TEST_ASSERT_EQUAL(ProbeFault::None, classifyScratchpad(true, sp, 0x28, -20.0f, 60.0f, &t));
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, -10.125f, t);
+  spFill(sp, 0x0157, 0x1F);  // 9 bit: i tre bit bassi non contano -> 21,0
+  TEST_ASSERT_EQUAL(ProbeFault::None, classifyScratchpad(true, sp, 0x28, -20.0f, 60.0f, &t));
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 21.0f, t);
+  spFill(sp, 0x0550);  // 85 °C di accensione
+  TEST_ASSERT_EQUAL(ProbeFault::Reset, classifyScratchpad(true, sp, 0x28, -20.0f, 60.0f, &t));
+  spFill(sp, -50 * 16);
+  TEST_ASSERT_EQUAL(ProbeFault::OutOfRange, classifyScratchpad(true, sp, 0x28, -20.0f, 60.0f, &t));
+  spFill(sp, 344);
+  sp[3] ^= 0x10;  // un bit cambiato per strada
+  TEST_ASSERT_EQUAL(ProbeFault::Crc, classifyScratchpad(true, sp, 0x28, -20.0f, 60.0f, &t));
+  for (uint8_t i = 0; i < 9; i++) sp[i] = 0xFF;
+  TEST_ASSERT_EQUAL(ProbeFault::AllOnes, classifyScratchpad(true, sp, 0x28, -20.0f, 60.0f, &t));
+  for (uint8_t i = 0; i < 9; i++) sp[i] = 0x00;
+  TEST_ASSERT_EQUAL(ProbeFault::AllZeros, classifyScratchpad(true, sp, 0x28, -20.0f, 60.0f, &t));
+  TEST_ASSERT_EQUAL(ProbeFault::NoResponse, classifyScratchpad(false, sp, 0x28, -20.0f, 60.0f, &t));
+  // Altra famiglia: solo il controllo d'integrita', la temperatura non viene toccata.
+  spFill(sp, 344);
+  t = -99.0f;
+  TEST_ASSERT_EQUAL(ProbeFault::None, classifyScratchpad(true, sp, 0x10, -20.0f, 60.0f, &t));
+  TEST_ASSERT_EQUAL_FLOAT(-99.0f, t);
+}
+
+// Cold crash: il mosto scende di dCph °C/h per `ore` ore, un tick al minuto.
+static float crashRun(CrashMonitor& m, float t, float dCph, float ore) {
+  for (int i = 0; i < (int)(ore * 60); i++) {
+    m.tick(60.0f, true, t);
+    t -= dCph / 60.0f;
+  }
+  return t;
+}
+
+static void test_cold_crash_stima_e_allarme() {
+  CrashMonitor m;
+  bool misurata = false;
+  // Appena partito: nessun dato, stima sulla velocita' programmata (0,5 °C/h).
+  TEST_ASSERT_EQUAL_INT32(36 * 60, m.etaMin(20.0f, 2.0f, 0.5f, 0.5f, &misurata));
+  TEST_ASSERT_FALSE(misurata);
+  // Alla velocita' dolce (0,25 °C/h) la stima programmata raddoppia.
+  TEST_ASSERT_EQUAL_INT32(72 * 60, m.etaMin(20.0f, 2.0f, 0.5f, 0.25f, &misurata));
+  // Frigo che scende a 0,4 °C/h (piu' lento del programma ma sopra la soglia).
+  float t = crashRun(m, 20.0f, 0.4f, 7.0f);
+  TEST_ASSERT_TRUE(m.full());
+  TEST_ASSERT_FLOAT_WITHIN(0.05f, 2.4f, m.drop());  // 6 ore x 0,4
+  int32_t eta = m.etaMin(t, 2.0f, 0.5f, 0.5f, &misurata);
+  TEST_ASSERT_TRUE(misurata);
+  TEST_ASSERT_INT32_WITHIN(15, (int32_t)((t - 2.0f) / 0.4f * 60.0f), eta);
+  TEST_ASSERT_FALSE(m.slow(t, 2.0f, 0.5f, 1.5f));
+  // Il frigo rallenta a 0,1 °C/h: dopo sei ore a quel passo scatta l'allarme.
+  t = crashRun(m, t, 0.1f, 6.0f);
+  TEST_ASSERT_TRUE(m.slow(t, 2.0f, 0.5f, 1.5f));
+  // Arrivato in tolleranza: niente allarme e niente stima.
+  TEST_ASSERT_FALSE(m.slow(2.3f, 2.0f, 0.5f, 1.5f));
+  TEST_ASSERT_EQUAL_INT32(-1, m.etaMin(2.3f, 2.0f, 0.5f, 0.5f, &misurata));
+  // Sonda assente oltre 30 minuti: la finestra riparte.
+  for (int i = 0; i < 31; i++) m.tick(60.0f, false, 0.0f);
+  TEST_ASSERT_FALSE(m.full());
+  TEST_ASSERT_EQUAL_FLOAT(0.0f, m.windowHours());
+}
+
+static void test_taratura_segue_la_sonda() {
+  auto same = [](const std::string& a, const std::string& b) { return strcasecmp(a.c_str(), b.c_str()) == 0; };
+  auto empty = [](const std::string& a) { return a.empty(); };
+  const std::string vecchi[3] = {"28AA", "28BB", "28CC"};
+  const float tar[3] = {0.5f, -0.25f, 1.0f};
+  bool m[3];
+  {  // Sonda del mosto sostituita: la nuova riparte da zero.
+    std::string nuovi[3] = {"28DD", "28BB", "28CC"};
+    float off[3] = {0.5f, -0.25f, 1.0f};
+    TEST_ASSERT_EQUAL_UINT8(1, followProbeOffsets(vecchi, tar, nuovi, off, 3, same, empty, m));
+    TEST_ASSERT_TRUE(m[0]);
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, off[0]);
+    TEST_ASSERT_EQUAL_FLOAT(-0.25f, off[1]);
+  }
+  {  // Due sonde scambiate di posizione: ognuna si porta dietro la sua taratura.
+    std::string nuovi[3] = {"28bb", "28AA", "28CC"};  // maiuscole diverse: stessa sonda
+    float off[3] = {0.5f, -0.25f, 1.0f};
+    TEST_ASSERT_EQUAL_UINT8(2, followProbeOffsets(vecchi, tar, nuovi, off, 3, same, empty, m));
+    TEST_ASSERT_EQUAL_FLOAT(-0.25f, off[0]);
+    TEST_ASSERT_EQUAL_FLOAT(0.5f, off[1]);
+  }
+  {  // Sonda cambiata e correzione scritta dall'utente nello stesso salvataggio: si rispetta.
+    std::string nuovi[3] = {"28DD", "28BB", "28CC"};
+    float off[3] = {0.3f, -0.25f, 1.0f};
+    TEST_ASSERT_EQUAL_UINT8(0, followProbeOffsets(vecchi, tar, nuovi, off, 3, same, empty, m));
+    TEST_ASSERT_EQUAL_FLOAT(0.3f, off[0]);
+  }
+  {  // Nessun cambio di sonda: niente si muove. Posizione svuotata: correzione a zero.
+    std::string nuovi[3] = {"28AA", "28BB", ""};
+    float off[3] = {0.5f, -0.25f, 1.0f};
+    TEST_ASSERT_EQUAL_UINT8(1, followProbeOffsets(vecchi, tar, nuovi, off, 3, same, empty, m));
+    TEST_ASSERT_FALSE(m[0]);
+    TEST_ASSERT_TRUE(m[2]);
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, off[2]);
+  }
+}
+
+static void test_penalita_tentativi() {
+  RetryPenalty p;
+  const uint32_t t0 = 0xFFFFF000u;  // a cavallo del wrap di millis()
+  for (int i = 0; i < 4; i++) p.fail(t0 + i);
+  TEST_ASSERT_FALSE(p.locked(t0 + 10));
+  p.fail(t0 + 10);  // quinto errore: pausa di 2 s
+  TEST_ASSERT_TRUE(p.locked(t0 + 11));
+  TEST_ASSERT_EQUAL_UINT32(2, p.waitSec(t0 + 11));
+  TEST_ASSERT_TRUE(p.locked(t0 + 2009));
+  TEST_ASSERT_FALSE(p.locked(t0 + 2010));
+  p.fail(t0 + 2010);  // sesto: 4 s
+  TEST_ASSERT_TRUE(p.locked(t0 + 6009));
+  TEST_ASSERT_FALSE(p.locked(t0 + 6010));
+  for (int i = 0; i < 10; i++) p.fail(t0 + 7000 + i);  // tetto a 60 s
+  TEST_ASSERT_EQUAL_UINT32(60, p.waitSec(t0 + 7009));
+  // Un tentativo riuscito azzera.
+  p.success();
+  TEST_ASSERT_FALSE(p.locked(t0 + 7010));
+  // Dopo 15 minuti senza errori il conteggio riparte da zero.
+  for (int i = 0; i < 4; i++) p.fail(t0 + 8000 + i);
+  p.fail(t0 + 8000 + 15UL * 60UL * 1000UL + 10);
+  TEST_ASSERT_FALSE(p.locked(t0 + 8000 + 15UL * 60UL * 1000UL + 11));
+}
+
+static void test_penalita_per_indirizzo() {
+  RetryPenaltyByKey<2> p;
+  const uint32_t A = 0x0A00A8C0, B = 0x0B00A8C0, C = 0x0C00A8C0;
+  for (int i = 0; i < 5; i++) p.fail(A, 1000 + i);  // uno script con la password vecchia
+  TEST_ASSERT_TRUE(p.locked(A, 1010));
+  TEST_ASSERT_FALSE(p.locked(B, 1010));  // il proprietario, da un altro indirizzo, entra
+  // Posti pieni: un terzo indirizzo prende il posto inattivo o il piu' vecchio, non blocca A.
+  p.fail(B, 2000);
+  p.fail(C, 3000);
+  TEST_ASSERT_FALSE(p.locked(C, 3001));
+  p.success(A);
+  TEST_ASSERT_FALSE(p.locked(A, 3002));
+}
+
+// Immagine sintetica nel formato di elf2bin.py: 0xE9 in testa e a 0x1000, lunghezza e CRC
+// a 0x1010. Il CRC atteso (0x0C5751C3) e' calcolato con crc8266() di elf2bin.py.
+static std::vector<uint8_t> fwSintetico() {
+  std::vector<uint8_t> b(5000);
+  for (size_t i = 0; i < b.size(); i++) b[i] = (uint8_t)((i * 7 + 3) & 255);
+  b[0] = 0xE9;
+  b[0x1000] = 0xE9;
+  const uint32_t len = 5000, crc = 0x0C5751C3u;
+  for (int k = 0; k < 4; k++) {
+    b[0x1010 + k] = (uint8_t)(len >> (8 * k));
+    b[0x1014 + k] = (uint8_t)(crc >> (8 * k));
+  }
+  return b;
+}
+
+static FwImageCheck::Result fwVerifica(const std::vector<uint8_t>& b, size_t n, size_t blocco) {
+  FwImageCheck c;
+  c.begin();
+  for (size_t o = 0; o < n; o += blocco) c.feed(b.data() + o, (n - o) < blocco ? (n - o) : blocco);
+  return c.result();
+}
+
+static void test_firmware_immagine_verificata() {
+  std::vector<uint8_t> b = fwSintetico();
+  TEST_ASSERT_EQUAL(FwImageCheck::Result::Ok, fwVerifica(b, b.size(), 1436));
+  TEST_ASSERT_EQUAL(FwImageCheck::Result::Ok, fwVerifica(b, b.size(), 7));  // blocchi qualsiasi
+  TEST_ASSERT_EQUAL(FwImageCheck::Result::Short, fwVerifica(b, 4999, 1436));  // troncato
+  TEST_ASSERT_EQUAL(FwImageCheck::Result::NotImage, fwVerifica(b, 3000, 1436));
+  std::vector<uint8_t> lungo = b;
+  lungo.push_back(0);
+  TEST_ASSERT_EQUAL(FwImageCheck::Result::Long, fwVerifica(lungo, lungo.size(), 1436));
+  std::vector<uint8_t> rotto = b;
+  rotto[2500] ^= 0x01;  // un bit cambiato
+  TEST_ASSERT_EQUAL(FwImageCheck::Result::Crc, fwVerifica(rotto, rotto.size(), 1436));
+  std::vector<uint8_t> altro = b;
+  altro[0x1000] = 0x1F;  // per esempio un .bin.gz
+  TEST_ASSERT_EQUAL(FwImageCheck::Result::NotImage, fwVerifica(altro, altro.size(), 1436));
+}
+
+static void test_firmware_vero_verificato() {
+  // Il firmware.bin compilato per la scheda, se c'e': deve passare intero, non troncato.
+  // Percorso dal sorgente di questo test (la cartella di lavoro dei test cambia).
+  std::string dir = __FILE__;
+  dir = dir.substr(0, dir.find_last_of('/') + 1);
+  FILE* f = fopen((dir + "../../.pio/build/d1_mini/firmware.bin").c_str(), "rb");
+  if (!f) f = fopen(".pio/build/d1_mini/firmware.bin", "rb");
+  if (!f) TEST_IGNORE_MESSAGE("firmware.bin non compilato: prova saltata");
+  std::vector<uint8_t> b;
+  uint8_t buf[4096];
+  size_t k;
+  while ((k = fread(buf, 1, sizeof buf, f)) > 0) b.insert(b.end(), buf, buf + k);
+  fclose(f);
+  TEST_ASSERT_EQUAL(FwImageCheck::Result::Ok, fwVerifica(b, b.size(), 1436));
+  TEST_ASSERT_EQUAL(FwImageCheck::Result::Short, fwVerifica(b, 300000, 1436));
+}
+
+// Freddo non comandato (relè del frigo incollato): solo allarme.
+// sp < -50 = nessun setpoint (modo fermo).
+static bool cwRun(CoolWatch& w, uint32_t n, bool cool, float sp, float mosto, float aria,
+                  float dAria, float amb) {
+  bool a = false;
+  for (uint32_t i = 0; i < n; i++) {
+    a = w.tick(1.0f, true, cool, sp > -50.0f, sp, true, mosto, true, aria, true, amb);
+    aria += dAria;
+  }
+  return a;
+}
+
+static void test_coolwatch_rele_incollato_dopo_lo_stop() {
+  // Il frigo gira (aria a 4 °C per un mosto a 18), poi il freddo viene spento ma il relè
+  // resta chiuso: dopo 10 minuti l'aria e' ancora a 4.
+  CoolWatch w;
+  w.configure(CoolWatch::Cfg{});
+  TEST_ASSERT_FALSE(cwRun(w, 300, true, 18.0f, 18.0f, 4.0f, 0, 22.0f));
+  TEST_ASSERT_FALSE(cwRun(w, 599, false, 18.0f, 18.0f, 4.0f, 0, 22.0f));
+  TEST_ASSERT_TRUE(cwRun(w, 2, false, 18.0f, 18.0f, 4.0f, 0, 22.0f));
+  // Resta finche' l'aria resta fredda; si spegne quando il freddo torna comandato.
+  TEST_ASSERT_TRUE(cwRun(w, 3600, false, 18.0f, 18.0f, 4.0f, 0, 22.0f));
+  TEST_ASSERT_FALSE(cwRun(w, 1, true, 18.0f, 18.0f, 4.0f, 0, 22.0f));
+}
+
+static void test_coolwatch_stop_vero_non_allarma() {
+  // Stop vero: l'aria risale di 6 °C in 10 minuti.
+  CoolWatch w;
+  w.configure(CoolWatch::Cfg{});
+  TEST_ASSERT_FALSE(cwRun(w, 300, true, 18.0f, 18.0f, 4.0f, 0, 22.0f));
+  TEST_ASSERT_FALSE(cwRun(w, 1800, false, 18.0f, 18.0f, 4.0f, 6.0f / 600, 22.0f));
+}
+
+static void test_coolwatch_falso_allarme_si_smentisce() {
+  // Freezer a pozzetto: dopo lo stop l'aria risale piano (solo +0,5 in 10 minuti), l'allarme
+  // scatta, ma si spegne da solo quando l'aria risale vicino al mosto.
+  CoolWatch w;
+  w.configure(CoolWatch::Cfg{});
+  TEST_ASSERT_FALSE(cwRun(w, 300, true, 18.0f, 18.0f, 4.0f, 0, 22.0f));
+  TEST_ASSERT_TRUE(cwRun(w, 601, false, 18.0f, 18.0f, 4.0f, 0.5f / 600, 22.0f));
+  // ref 18, soglia 16: si spegne con l'aria a 17.
+  TEST_ASSERT_FALSE(cwRun(w, 1300, false, 18.0f, 18.0f, 4.5f, 12.6f / 1300, 22.0f));
+}
+
+static void test_coolwatch_garage_freddo_non_allarma() {
+  // Inverno: il frigo non ha mai raffreddato, l'aria e' stabile a 10 °C con il mosto a 18.
+  CoolWatch w;
+  w.configure(CoolWatch::Cfg{});
+  TEST_ASSERT_FALSE(cwRun(w, 3600, false, 18.0f, 18.0f, 10.0f, 0, 8.0f));
+  // Un breve ciclo di freddo (correzione di un superamento), poi stop: l'aria resta a 8,5
+  // perche' la stanza e' a 5. Non e' sotto la stanza: niente allarme.
+  TEST_ASSERT_FALSE(cwRun(w, 300, true, 18.0f, 18.5f, 8.0f, 0, 5.0f));
+  TEST_ASSERT_FALSE(cwRun(w, 1800, false, 18.0f, 18.5f, 8.5f, 0, 5.0f));
+}
+
+static void test_coolwatch_crollo_a_frigo_fermo() {
+  // Frigo fermo da un pezzo, il relè si chiude da solo: l'aria crolla di 4 °C in 4 minuti
+  // sotto l'ambiente e sotto il mosto. Il crollo parte a meta' di un passo della finestra.
+  CoolWatch w;
+  w.configure(CoolWatch::Cfg{});
+  TEST_ASSERT_FALSE(cwRun(w, 1365, false, 18.0f, 18.0f, 17.0f, 0, 22.0f));
+  TEST_ASSERT_TRUE(cwRun(w, 240, false, 18.0f, 18.0f, 17.0f, -4.0f / 240, 22.0f));
+}
+
+static void test_coolwatch_porta_aperta_non_allarma() {
+  // Estate: camera a 12, stanza a 25: porta aperta (aria a 18) e richiusa (torna a 12,5).
+  CoolWatch w;
+  w.configure(CoolWatch::Cfg{});
+  TEST_ASSERT_FALSE(cwRun(w, 1200, false, 12.0f, 12.0f, 12.5f, 0, 25.0f));
+  TEST_ASSERT_FALSE(cwRun(w, 60, false, 12.0f, 12.0f, 12.5f, 5.5f / 60, 25.0f));
+  TEST_ASSERT_FALSE(cwRun(w, 240, false, 12.0f, 12.0f, 18.0f, -5.5f / 240, 25.0f));
+  // Riscaldamento: setpoint 20, mosto a 17, stanza a 23. Porta aperta (aria a 21) e richiusa
+  // (torna a 17,8): sotto il setpoint di oltre 2 °C, ma non sotto il mosto.
+  TEST_ASSERT_FALSE(cwRun(w, 1200, false, 20.0f, 17.0f, 17.5f, 0, 23.0f));
+  TEST_ASSERT_FALSE(cwRun(w, 60, false, 20.0f, 17.0f, 17.5f, 3.5f / 60, 23.0f));
+  TEST_ASSERT_FALSE(cwRun(w, 120, false, 20.0f, 17.0f, 21.0f, -3.2f / 120, 23.0f));
+}
+
+static void test_coolwatch_modo_fermo_rele_incollato() {
+  // Fine cotta: il freddo girava, poi la camera passa a fermo (nessun setpoint) e il relè
+  // resta chiuso. Riferimento = mosto (4 °C): l'aria a -2 non risale.
+  CoolWatch w;
+  w.configure(CoolWatch::Cfg{});
+  TEST_ASSERT_FALSE(cwRun(w, 300, true, 4.0f, 4.0f, -2.0f, 0, 20.0f));
+  TEST_ASSERT_TRUE(cwRun(w, 601, false, -100.0f, 4.0f, -2.0f, 0, 20.0f));
+}
+
+static void test_slope_stima_pendenza_e_arrivo() {
+  SlopeEstimator s;
+  float t = 10.0f;
+  for (int k = 0; k < 21 * 60; k++) {  // 21 minuti a +1,5 °C/h
+    s.tick(1.0f, true, t);
+    t += 1.5f / 3600.0f;
+  }
+  TEST_ASSERT_TRUE(s.valid());
+  TEST_ASSERT_FLOAT_WITHIN(0.05f, 1.5f, s.cph());
+  // Da circa 10,5 °C a 18 °C a 1,5 °C/h: circa 5 ore.
+  const int32_t eta = s.etaMin(10.5f, 18.0f, 0.3f);
+  TEST_ASSERT_INT_WITHIN(5, 300, eta);
+  // Allontanandosi dal target: nessuna stima.
+  TEST_ASSERT_EQUAL_INT32(-1, s.etaMin(10.5f, 5.0f, 0.3f));
+}
+
+static void test_slope_quantizzazione_e_buco_della_sonda() {
+  SlopeEstimator s;
+  // Temperatura ferma ma quantizzata a 0,0625: la pendenza resta vicina a zero.
+  for (int k = 0; k < 21 * 60; k++) s.tick(1.0f, true, (k / 60) % 2 ? 18.0625f : 18.0f);
+  TEST_ASSERT_TRUE(s.valid());
+  TEST_ASSERT_FLOAT_WITHIN(0.25f, 0.0f, s.cph());
+  // Sonda invalida oltre 90 secondi: si riparte da zero.
+  for (int k = 0; k < 91; k++) s.tick(1.0f, false, 0.0f);
+  TEST_ASSERT_FALSE(s.valid());
+}
+
+static void test_aria_limite_freddo_e_caldo() {
+  AirLimit a;
+  a.configure(AirLimit::Cfg{});  // min -5, distanza sotto spenta, 10 sopra, isteresi 3
+  // Ale a 18 °C: senza la distanza sotto, il pull-down non e' limitato (aria a 2 °C).
+  a.tick(true, 18.0f, true, 2.0f);
+  TEST_ASSERT_FALSE(a.coolBlocked());
+  // Cold crash a -1: freddo sospeso sotto -5, ripreso sopra -2.
+  a.tick(true, -1.0f, true, -5.2f);
+  TEST_ASSERT_TRUE(a.coolBlocked());
+  a.tick(true, -1.0f, true, -2.5f);
+  TEST_ASSERT_TRUE(a.coolBlocked());
+  a.tick(true, -1.0f, true, -1.9f);
+  TEST_ASSERT_FALSE(a.coolBlocked());
+  // Con la distanza sotto a 10: ale a 18, freddo sospeso sotto 8, ripreso sopra 11.
+  AirLimit::Cfg c; c.belowSpC = 10.0f;
+  a.configure(c);
+  a.tick(true, 18.0f, true, 7.9f);
+  TEST_ASSERT_TRUE(a.coolBlocked());
+  a.tick(true, 18.0f, true, 10.5f);
+  TEST_ASSERT_TRUE(a.coolBlocked());
+  a.tick(true, 18.0f, true, 11.1f);
+  TEST_ASSERT_FALSE(a.coolBlocked());
+  // Minimo a -10: nessun minimo assoluto.
+  c.belowSpC = 0.0f; c.minAirC = -10.0f;
+  a.configure(c);
+  a.tick(true, -1.0f, true, -15.0f);
+  TEST_ASSERT_FALSE(a.coolBlocked());
+  // Caldo sospeso con l'aria oltre 28 °C (setpoint 18 + 10).
+  a.tick(true, 18.0f, true, 28.5f);
+  TEST_ASSERT_TRUE(a.heatBlocked());
+  // Sonda della camera non valida: nessun limite.
+  a.tick(true, 18.0f, false, 0.0f);
+  TEST_ASSERT_FALSE(a.heatBlocked());
+  TEST_ASSERT_FALSE(a.coolBlocked());
+}
+
+
+// ---- 3.14.0: decimazione del grafico che conserva i picchi ----
+static void test_minmax_conserva_picchi_e_ordine() {
+  MinMaxGroup<2> g;
+  g.reset();
+  const int32_t M = MinMaxGroup<2>::kMissing;
+  // serie 0: 500, 900, 100, 400 -> prima il massimo (900), poi il minimo (100)
+  // serie 1: 10, M, 30, 20     -> prima il minimo (10), poi il massimo (30)
+  int32_t a[2] = {500, 10}, b[2] = {900, M}, c[2] = {100, 30}, d[2] = {400, 20};
+  g.add(1000, a, 0x00);
+  g.add(1300, b, 0x02);  // freddo acceso per un solo campione
+  g.add(1600, c, 0x00);
+  g.add(1900, d, 0x00);
+  TEST_ASSERT_EQUAL_UINT16(4, g.count());
+  TEST_ASSERT_EQUAL_UINT32(1000, g.firstEpoch());
+  TEST_ASSERT_EQUAL_UINT32(1900, g.lastEpoch());
+  TEST_ASSERT_EQUAL_INT32(900, g.value(0, false));
+  TEST_ASSERT_EQUAL_INT32(100, g.value(0, true));
+  TEST_ASSERT_EQUAL_INT32(10, g.value(1, false));
+  TEST_ASSERT_EQUAL_INT32(30, g.value(1, true));
+  TEST_ASSERT_EQUAL_UINT8(0x02, g.flags());  // l'accensione breve non si perde
+}
+
+static void test_minmax_serie_assente_e_reset() {
+  MinMaxGroup<2> g;
+  g.reset();
+  const int32_t M = MinMaxGroup<2>::kMissing;
+  int32_t a[2] = {M, 7};
+  g.add(10, a, 0x01);
+  TEST_ASSERT_EQUAL_INT32(M, g.value(0, false));
+  TEST_ASSERT_EQUAL_INT32(M, g.value(0, true));
+  TEST_ASSERT_EQUAL_INT32(7, g.value(1, false));
+  TEST_ASSERT_EQUAL_INT32(7, g.value(1, true));
+  g.reset();
+  TEST_ASSERT_EQUAL_UINT16(0, g.count());
+  TEST_ASSERT_EQUAL_UINT8(0, g.flags());
+  TEST_ASSERT_EQUAL_INT32(M, g.value(1, false));
+}
+
+
+// ---- 3.15.0: registro eventi ad anello ----
+struct FakeEeprom {
+  uint8_t m[4096];
+  uint32_t writes = 0;
+  bool fail = false;
+  bool read(uint16_t mem, uint8_t* buf, uint16_t len) {
+    if (fail || mem + len > sizeof(m)) return false;
+    memcpy(buf, m + mem, len);
+    return true;
+  }
+  bool writePage(uint16_t mem, const uint8_t* buf, uint8_t len) {
+    if (fail || mem + len > sizeof(m) || (mem / 32) != ((mem + len - 1) / 32)) return false;
+    memcpy(m + mem, buf, len);
+    writes++;
+    return true;
+  }
+};
+
+static void test_eventi_vergine_e_ripresa() {
+  static FakeEeprom ee;
+  memset(ee.m, 0xFF, sizeof(ee.m));  // EEPROM nuova
+  EventRing<FakeEeprom> r;
+  TEST_ASSERT_TRUE(r.begin(&ee));
+  TEST_ASSERT_EQUAL_UINT32(0, r.lastSeq());
+  TEST_ASSERT_TRUE(r.add(1000, 1, 2, 3, -4));
+  TEST_ASSERT_TRUE(r.add(1001, 5, 6, 7, 8));
+  EventRec e;
+  TEST_ASSERT_TRUE(r.readSeq(2, e));
+  TEST_ASSERT_EQUAL_UINT8(5, e.code);
+  TEST_ASSERT_EQUAL_INT16(8, e.v);
+  // "riavvio": un anello nuovo sulla stessa memoria ritrova il punto
+  EventRing<FakeEeprom> r2;
+  TEST_ASSERT_TRUE(r2.begin(&ee));
+  TEST_ASSERT_EQUAL_UINT32(2, r2.lastSeq());
+  TEST_ASSERT_TRUE(r2.add(1002, 9, 0, 0, 0));
+  TEST_ASSERT_TRUE(r2.readSeq(1, e));
+  TEST_ASSERT_EQUAL_UINT32(1000, e.epoch);
+  TEST_ASSERT_TRUE(r2.readSeq(3, e));
+  TEST_ASSERT_EQUAL_UINT8(9, e.code);
+  TEST_ASSERT_FALSE(r2.readSeq(4, e));
+  TEST_ASSERT_FALSE(r2.readSeq(0, e));
+}
+
+static void test_eventi_giro_completo_e_contenuto_estraneo() {
+  static FakeEeprom ee;
+  for (uint16_t i = 0; i < sizeof(ee.m); i++) ee.m[i] = (uint8_t)(i * 37 + 11);  // spazzatura
+  EventRing<FakeEeprom> r;
+  TEST_ASSERT_TRUE(r.begin(&ee));
+  TEST_ASSERT_EQUAL_UINT32(0, r.lastSeq());  // nessun record valido nella spazzatura
+  for (uint32_t i = 1; i <= 300; i++) TEST_ASSERT_TRUE(r.add(i, (uint8_t)(i & 0xFF), 0, 0, 0));
+  EventRec e;
+  TEST_ASSERT_TRUE(r.readSeq(300, e));
+  TEST_ASSERT_EQUAL_UINT32(300, e.epoch);
+  TEST_ASSERT_TRUE(r.readSeq(45, e));   // l'ultimo dei 256 conservati
+  TEST_ASSERT_FALSE(r.readSeq(44, e));  // sovrascritto
+  EventRing<FakeEeprom> r2;
+  TEST_ASSERT_TRUE(r2.begin(&ee));
+  TEST_ASSERT_EQUAL_UINT32(300, r2.lastSeq());
+  TEST_ASSERT_TRUE(r2.add(301, 1, 0, 0, 0));
+  TEST_ASSERT_TRUE(r2.readSeq(46, e));
+  TEST_ASSERT_FALSE(r2.readSeq(45, e));  // il 301 ha preso il suo slot
+  // memoria che non risponde: registro spento, nessuna scrittura
+  ee.fail = true;
+  EventRing<FakeEeprom> r3;
+  TEST_ASSERT_FALSE(r3.begin(&ee));
+  TEST_ASSERT_FALSE(r3.add(1, 1, 0, 0, 0));
+}
+
+static void test_allarmi_antirimbalzo() {
+  AlarmDebounce d(30000);
+  uint32_t on, off;
+  TEST_ASSERT_FALSE(d.tick(0x1, 0, on, off));
+  TEST_ASSERT_FALSE(d.tick(0x1, 29000, on, off));
+  TEST_ASSERT_TRUE(d.tick(0x1, 30000, on, off));
+  TEST_ASSERT_EQUAL_UINT32(0x1, on);
+  TEST_ASSERT_EQUAL_UINT32(0, off);
+  // oscillazione rapida: niente
+  TEST_ASSERT_FALSE(d.tick(0x0, 31000, on, off));
+  TEST_ASSERT_FALSE(d.tick(0x1, 32000, on, off));
+  TEST_ASSERT_FALSE(d.tick(0x0, 33000, on, off));
+  TEST_ASSERT_FALSE(d.tick(0x1, 70000, on, off));  // tornato uguale: azzera
+  // spento stabile, piu' un altro acceso
+  TEST_ASSERT_FALSE(d.tick(0x4, 80000, on, off));
+  TEST_ASSERT_TRUE(d.tick(0x4, 110000, on, off));
+  TEST_ASSERT_EQUAL_UINT32(0x4, on);
+  TEST_ASSERT_EQUAL_UINT32(0x1, off);
+}
+
+
+// ---- 3.16.0: andamento della densita' ----
+static float rumore(uint32_t i) {  // ±0,001 SG, deterministico
+  return ((int)((uint32_t)(i * 2654435761u) >> 28) - 8) / 8000.0f;
+}
+static uint32_t trendFill(GravityTrend& t, uint32_t t0, float sg0, float sgDay, float ore,
+                          uint32_t passoSec = 1800) {
+  uint32_t e = t0, i = 0;
+  for (; e < t0 + (uint32_t)(ore * 3600); e += passoSec, i++)
+    t.add(e, sg0 + sgDay * (e - t0) / 86400.0f + rumore(i));
+  return e - passoSec;
+}
+
+static void test_trend_attiva_stabile_rallenta() {
+  const uint32_t T0 = 1800000000UL;
+  GravityTrend t;
+  t.reset();
+  uint32_t fine = trendFill(t, T0, 1.050f, -0.010f, 50);
+  float s;
+  TEST_ASSERT_TRUE(t.slopePerDay(fine, 24, s));
+  TEST_ASSERT_FLOAT_WITHIN(0.0015f, -0.010f, s);
+  TEST_ASSERT_EQUAL(GravityTrend::State::Active, t.state(fine));
+
+  t.reset();
+  fine = trendFill(t, T0, 1.012f, 0.0f, 50);  // ferma, con il rumore dell'iSpindel
+  TEST_ASSERT_EQUAL(GravityTrend::State::Stable, t.state(fine));
+
+  t.reset();
+  fine = trendFill(t, T0, 1.014f, -0.002f, 50);  // cala piano: non e' ferma
+  TEST_ASSERT_EQUAL(GravityTrend::State::Slowing, t.state(fine));
+}
+
+static void test_trend_dati_insufficienti_o_vecchi() {
+  const uint32_t T0 = 1800000000UL;
+  GravityTrend t;
+  t.reset();
+  uint32_t fine = trendFill(t, T0, 1.012f, 0.0f, 20);  // solo 20 ore: niente «stabile»
+  TEST_ASSERT_NOT_EQUAL(GravityTrend::State::Stable, t.state(fine));
+  t.reset();
+  fine = trendFill(t, T0, 1.012f, 0.0f, 50);
+  TEST_ASSERT_EQUAL(GravityTrend::State::Unknown, t.state(fine + 4 * 3600));  // densimetro muto
+  // lettura nel passato e valori assurdi ignorati
+  const uint8_t prima = t.bins();
+  t.add(fine - 10 * 3600, 1.000f);
+  t.add(fine + 3600, 2.5f);
+  TEST_ASSERT_EQUAL_UINT8(prima, t.bins());
+}
+
+static void test_conversione_plato_sg() {
+  TEST_ASSERT_FLOAT_WITHIN(0.0005f, 1.0484f, platoToSg(12.0f));
+  TEST_ASSERT_FLOAT_WITHIN(0.1f, 12.0f, sgToPlato(platoToSg(12.0f)));
+  TEST_ASSERT_FLOAT_WITHIN(0.05f, 0.0f, sgToPlato(1.000f));
+}
+
+
+// ---- 3.16.0: step «attendi conferma» e stabilita' robusta al rumore ----
+static void test_step_attende_la_conferma() {
+  StepDef s[2];
+  s[0].type = StepType::Fixed; s[0].enabled = true; s[0].targetC = 19.0f;
+  s[0].durationSec = 3600; s[0].confirm = true;
+  s[1].type = StepType::Fixed; s[1].enabled = true; s[1].targetC = 21.0f; s[1].durationSec = 3600;
+  ProfileEngine e;
+  e.configure(0.5f);
+  e.setSteps(s, 2);
+  e.startProfile(T0, 19.0f, true);
+  ProfileEngine::TickInput in{};
+  in.tempC = 19.0f; in.tempValid = true;
+  in.nowEpoch = T0 + 3601;
+  ProfileEngine::TickOutput o = e.tick(in);
+  TEST_ASSERT_TRUE(o.waitingConfirm);
+  TEST_ASSERT_TRUE(o.stepChanged);  // l'attesa va salvata
+  TEST_ASSERT_EQUAL_UINT8(0, e.stepIdx());
+  TEST_ASSERT_FLOAT_WITHIN(0.01f, 19.0f, o.setpointC);
+  in.nowEpoch = T0 + 3 * 86400;  // giorni dopo: aspetta ancora, non avanza da solo
+  o = e.tick(in);
+  TEST_ASSERT_TRUE(o.waitingConfirm);
+  TEST_ASSERT_EQUAL_UINT8(0, e.stepIdx());
+  // riavvio: l'attesa sopravvive
+  EngineSnapshot snap = e.snapshot();
+  ProfileEngine e2;
+  e2.configure(0.5f);
+  e2.setSteps(s, 2);
+  e2.restore(snap);
+  TEST_ASSERT_TRUE(e2.waitingConfirm());
+  o = e2.tick(in);
+  TEST_ASSERT_EQUAL_UINT8(0, e2.stepIdx());
+  // conferma: si passa allo step 2, che parte da adesso
+  TEST_ASSERT_TRUE(e2.confirm(in.nowEpoch, 19.0f, true));
+  TEST_ASSERT_FALSE(e2.waitingConfirm());
+  TEST_ASSERT_EQUAL_UINT8(1, e2.stepIdx());
+  TEST_ASSERT_EQUAL_UINT32(in.nowEpoch, e2.stepStartEpoch());
+  TEST_ASSERT_FALSE(e2.confirm(in.nowEpoch, 19.0f, true));  // niente da confermare
+}
+
+static void test_conferma_sull_ultimo_step_e_salta() {
+  StepDef s;
+  s.type = StepType::Fixed; s.enabled = true; s.targetC = 19.0f;
+  s.durationSec = 600; s.confirm = true;
+  ProfileEngine e;
+  e.configure(0.5f);
+  e.setSteps(&s, 1);
+  e.startProfile(T0, 19.0f, true);
+  ProfileEngine::TickInput in{};
+  in.tempC = 19.0f; in.tempValid = true; in.nowEpoch = T0 + 601;
+  e.tick(in);
+  TEST_ASSERT_TRUE(e.waitingConfirm());
+  TEST_ASSERT_FALSE(e.completed());
+  TEST_ASSERT_TRUE(e.skip(in.nowEpoch, 19.0f, true));  // «Salta step» vale come conferma
+  TEST_ASSERT_TRUE(e.completed());
+  TEST_ASSERT_FALSE(e.waitingConfirm());
+}
+
+static void test_stabile_ignora_un_valore_isolato() {
+  ProfileEngine e;
+  e.configure(0.5f);
+  StepDef s = gravStep(19.0f, ax::GravityMode::Stable, 0.0f);
+  s.stableBand = 0.002f;
+  s.stableHours = 2.0f;
+  e.setSteps(&s, 1);
+  e.startProfile(T0, 19.0f, true);
+  ProfileEngine::TickInput in{};
+  in.tempC = 19.0f; in.tempValid = true;
+  in.gravityValid = true; in.gravityFresh = true;
+  in.gravity = 1.012f; in.gravityEpoch = T0 + 1; in.nowEpoch = T0 + 1; e.tick(in);
+  // un valore anomalo isolato (letto per piu' tick), poi di nuovo in banda
+  in.gravity = 1.016f; in.gravityEpoch = T0 + 1800;
+  for (uint32_t t = 1800; t < 2400; t += 60) { in.nowEpoch = T0 + t; e.tick(in); }
+  in.gravity = 1.012f; in.gravityEpoch = T0 + 2700; in.nowEpoch = T0 + 2700; e.tick(in);
+  in.nowEpoch = T0 + 7202; e.tick(in);
+  TEST_ASSERT_TRUE(e.completed());  // la finestra non e' ripartita
+
+  // due letture fuori banda di fila: la finestra riparte
+  ProfileEngine f;
+  f.configure(0.5f);
+  f.setSteps(&s, 1);
+  f.startProfile(T0, 19.0f, true);
+  in.gravity = 1.012f; in.gravityEpoch = T0 + 1; in.nowEpoch = T0 + 1; f.tick(in);
+  in.gravity = 1.008f; in.gravityEpoch = T0 + 1800; in.nowEpoch = T0 + 1800; f.tick(in);
+  in.gravity = 1.008f; in.gravityEpoch = T0 + 2700; in.nowEpoch = T0 + 2700; f.tick(in);
+  in.nowEpoch = T0 + 7202; f.tick(in);
+  TEST_ASSERT_FALSE(f.completed());  // ripartita a T0+2700: servono altre 2 ore
+  in.nowEpoch = T0 + 2700 + 7201; f.tick(in);
+  TEST_ASSERT_TRUE(f.completed());
+}
+
+
+// ---- 3.17.0: ventola ----
+static void test_ventola_segue_con_post_funzionamento() {
+  FanControl f;
+  FanControl::Cfg c;
+  c.postRunSec = 120;
+  f.configure(c);
+  TEST_ASSERT_FALSE(f.tick(0, true, false, false));
+  TEST_ASSERT_TRUE(f.tick(10, true, false, true));     // freddo acceso
+  TEST_ASSERT_TRUE(f.tick(100, true, false, true));
+  TEST_ASSERT_TRUE(f.tick(219, true, false, false));   // post-funzionamento
+  TEST_ASSERT_FALSE(f.tick(220, true, false, false));
+  TEST_ASSERT_TRUE(f.tick(300, true, true, false));    // caldo
+  TEST_ASSERT_FALSE(f.tick(301, false, true, false));  // regolazione ferma: spenta
+  TEST_ASSERT_FALSE(f.tick(302, true, false, false));  // ripresa: niente post-run vecchio
+}
+
+static void test_ventola_ricircolo_e_sempre() {
+  FanControl f;
+  FanControl::Cfg c;
+  c.postRunSec = 0;
+  c.cycleOnSec = 300;     // 5 minuti
+  c.cycleEverySec = 3600; // ogni ora
+  f.configure(c);
+  TEST_ASSERT_FALSE(f.tick(0, true, false, false));
+  TEST_ASSERT_FALSE(f.tick(3299, true, false, false));
+  TEST_ASSERT_TRUE(f.tick(3300, true, false, false));  // 55 min spenta: parte il ricircolo
+  TEST_ASSERT_TRUE(f.tick(3599, true, false, false));
+  TEST_ASSERT_FALSE(f.tick(3600, true, false, false)); // 5 minuti fatti
+  TEST_ASSERT_FALSE(f.tick(6898, true, false, false));
+  TEST_ASSERT_TRUE(f.tick(6899, true, false, false));  // un'ora dopo l'ultima accensione
+  // un'accensione per il freddo conta come ricircolo
+  TEST_ASSERT_TRUE(f.tick(7500, true, false, true));
+  TEST_ASSERT_FALSE(f.tick(7501, true, false, false));
+  TEST_ASSERT_FALSE(f.tick(10799, true, false, false));
+  TEST_ASSERT_TRUE(f.tick(10800, true, false, false));
+  c.mode = FanControl::kSempre;
+  f.configure(c);
+  TEST_ASSERT_TRUE(f.tick(20000, true, false, false));
+  TEST_ASSERT_FALSE(f.tick(20001, false, false, false));
+}
+
 int main(int, char**) {
   UNITY_BEGIN();
   RUN_TEST(test_hysteresis_thresholds);
@@ -1563,8 +2377,6 @@ int main(int, char**) {
   RUN_TEST(test_interlock_never_both);
   RUN_TEST(test_interlock_switch_dead_time);
   RUN_TEST(test_compressor_rest_across_reboot);
-  RUN_TEST(test_compressor_stagger_desynchronizes_starts);
-  RUN_TEST(test_compressor_stagger_never_shortens_rest);
   RUN_TEST(test_compressor_rtc_untrusted_assumes_not_elapsed);
   RUN_TEST(test_compressor_clock_backwards_blocks);
   RUN_TEST(test_pipeline_probe_fault_kills_outputs);
@@ -1576,12 +2388,14 @@ int main(int, char**) {
   RUN_TEST(test_pipeline_pid_heat_and_cool_priority);
   RUN_TEST(test_pid_asymmetric_thresholds);
   RUN_TEST(test_pid_window_output);
-  RUN_TEST(test_pid_window_phase_offset_desynchronizes);
-  RUN_TEST(test_pid_window_phase_default_is_unshifted);
   RUN_TEST(test_profile_fixed_advances);
   RUN_TEST(test_profile_ramp_time_midpoint);
   RUN_TEST(test_profile_resume_after_blackout);
   RUN_TEST(test_profile_blackout_past_multiple_steps);
+  RUN_TEST(test_profile_interruzione_breve_tiene_il_passo);
+  RUN_TEST(test_profile_attendi_il_target);
+  RUN_TEST(test_profile_attendi_il_target_scade);
+  RUN_TEST(test_profile_attendi_il_target_blackout);
   RUN_TEST(test_profile_ramp_rate);
   RUN_TEST(test_profile_gravity_stale_never_advances);
   RUN_TEST(test_profile_completed_holds_last_setpoint);
@@ -1614,13 +2428,12 @@ int main(int, char**) {
   RUN_TEST(test_estimator_observe_timeout_learns);
   RUN_TEST(test_pipeline_force_off_respects_min_state);
   RUN_TEST(test_pipeline_estimators_learn_even_when_predictive_off);
+  RUN_TEST(test_pipeline_stop_forzato_non_insegna);
   RUN_TEST(test_pipeline_opposite_side_discards_observation);
   RUN_TEST(test_gravity_attenuation_trigger);
   RUN_TEST(test_gravity_attenuation_without_og_waits_then_timeout);
   RUN_TEST(test_gravity_timeout_beats_stale_sensor);
-  RUN_TEST(test_gravity_nessuna_sorgente_non_scade_mai);
   RUN_TEST(test_gravity_sorgente_presente_ma_muta_scade_ancora);
-  RUN_TEST(test_gravity_sorgente_assente_ma_dato_valido_avanza);
   RUN_TEST(test_due_camere_densimetri_indipendenti);
   RUN_TEST(test_gravity_stable_window);
   RUN_TEST(test_gravity_stable_survives_restart);
@@ -1643,5 +2456,47 @@ int main(int, char**) {
   RUN_TEST(test_skip_during_delayed_start_advances_pending);
   RUN_TEST(test_shift_clock_preserves_profile_start);
   RUN_TEST(test_safety_monitor_alarm_only_flags);
+  RUN_TEST(test_heater_timeout_scatta_al_limite);
+  RUN_TEST(test_heater_timeout_si_azzera_quando_il_caldo_si_spegne);
+  RUN_TEST(test_heater_sonda_ferma_a_caldo_pieno);
+  RUN_TEST(test_heater_sonda_che_sale_non_blocca);
+  RUN_TEST(test_heater_sonda_che_si_ferma_dopo_aver_salito);
+  RUN_TEST(test_heater_salita_a_caldo_spento);
+  RUN_TEST(test_heater_lenta_deriva_a_caldo_spento_non_blocca);
+  RUN_TEST(test_heater_freddo_inefficace);
+  RUN_TEST(test_heater_freddo_che_raffredda_non_blocca);
+  RUN_TEST(test_heater_freddo_vicino_al_setpoint_non_blocca);
+  RUN_TEST(test_heater_salto_della_sonda_non_blocca);
+  RUN_TEST(test_heater_disarmato_azzera_e_sonda_invalida_congela);
+  RUN_TEST(test_sonda_classificazione_guasti);
+  RUN_TEST(test_cold_crash_stima_e_allarme);
+  RUN_TEST(test_taratura_segue_la_sonda);
+  RUN_TEST(test_penalita_tentativi);
+  RUN_TEST(test_penalita_per_indirizzo);
+  RUN_TEST(test_firmware_immagine_verificata);
+  RUN_TEST(test_firmware_vero_verificato);
+  RUN_TEST(test_coolwatch_rele_incollato_dopo_lo_stop);
+  RUN_TEST(test_coolwatch_stop_vero_non_allarma);
+  RUN_TEST(test_coolwatch_falso_allarme_si_smentisce);
+  RUN_TEST(test_coolwatch_garage_freddo_non_allarma);
+  RUN_TEST(test_coolwatch_crollo_a_frigo_fermo);
+  RUN_TEST(test_coolwatch_porta_aperta_non_allarma);
+  RUN_TEST(test_coolwatch_modo_fermo_rele_incollato);
+  RUN_TEST(test_slope_stima_pendenza_e_arrivo);
+  RUN_TEST(test_slope_quantizzazione_e_buco_della_sonda);
+  RUN_TEST(test_aria_limite_freddo_e_caldo);
+  RUN_TEST(test_minmax_conserva_picchi_e_ordine);
+  RUN_TEST(test_minmax_serie_assente_e_reset);
+  RUN_TEST(test_eventi_vergine_e_ripresa);
+  RUN_TEST(test_eventi_giro_completo_e_contenuto_estraneo);
+  RUN_TEST(test_allarmi_antirimbalzo);
+  RUN_TEST(test_trend_attiva_stabile_rallenta);
+  RUN_TEST(test_trend_dati_insufficienti_o_vecchi);
+  RUN_TEST(test_conversione_plato_sg);
+  RUN_TEST(test_step_attende_la_conferma);
+  RUN_TEST(test_conferma_sull_ultimo_step_e_salta);
+  RUN_TEST(test_stabile_ignora_un_valore_isolato);
+  RUN_TEST(test_ventola_segue_con_post_funzionamento);
+  RUN_TEST(test_ventola_ricircolo_e_sempre);
   return UNITY_END();
 }
